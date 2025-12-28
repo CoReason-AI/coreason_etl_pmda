@@ -13,9 +13,6 @@ from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
-from polars.testing import assert_frame_equal
-from requests.models import Response
-
 from coreason_etl_pmda.transform_silver import (
     call_deepseek,
     jan_bridge_ai_fallback,
@@ -24,9 +21,11 @@ from coreason_etl_pmda.transform_silver import (
 )
 from coreason_etl_pmda.utils_date import convert_japanese_date_to_iso
 from coreason_etl_pmda.utils_text import normalize_text
+from polars.testing import assert_frame_equal
+from requests.models import Response  # type: ignore[import-untyped]
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def sample_approvals_raw() -> pl.DataFrame:
     """Returns a sample raw dataframe mimicking Bronze ingestion."""
     data = {
@@ -40,7 +39,7 @@ def sample_approvals_raw() -> pl.DataFrame:
     return pl.DataFrame(data)
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def sample_jan_ref() -> pl.DataFrame:
     """Returns a sample JAN reference dataframe."""
     data = {
@@ -100,7 +99,7 @@ def test_normalize_approvals_text_normalization() -> None:
     # Half-width Katakana: ｱ (U+FF71) -> ア (U+30A2)
     data = {
         "販売名": ["ﾃｽﾄ"],  # "Test" in half-width
-        "承認番号": ["123 "], # Trim
+        "承認番号": ["123 "],  # Trim
     }
     df = pl.DataFrame(data)
     normalized = normalize_approvals(df)
@@ -136,17 +135,17 @@ def test_jan_bridge_lookup_missing_columns() -> None:
 def test_jan_bridge_ai_fallback_success(mock_post: MagicMock) -> None:
     """Tests AI fallback when lookup fails."""
     # Setup DF with missing generic_name_en
-    df = pl.DataFrame({
-        "generic_name_jp": ["DrugX", "DrugY"],
-        "brand_name_jp": ["BrandX", "BrandY"],
-        "generic_name_en": [None, "DrugY (EN)"],
-    })
+    df = pl.DataFrame(
+        {
+            "generic_name_jp": ["DrugX", "DrugY"],
+            "brand_name_jp": ["BrandX", "BrandY"],
+            "generic_name_en": [None, "DrugY (EN)"],
+        }
+    )
 
     # Mock Response
     mock_response = MagicMock()
-    mock_response.json.return_value = {
-        "choices": [{"message": {"content": "DrugX (INN)"}}]
-    }
+    mock_response.json.return_value = {"choices": [{"message": {"content": "DrugX (INN)"}}]}
     mock_response.raise_for_status.return_value = None  # Success
     mock_post.return_value = mock_response
 
@@ -165,11 +164,13 @@ def test_jan_bridge_ai_fallback_success(mock_post: MagicMock) -> None:
 @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "fake_key"})
 def test_jan_bridge_ai_fallback_failure_exception(mock_post: MagicMock) -> None:
     """Tests AI fallback failure (API error exception)."""
-    df = pl.DataFrame({
-        "generic_name_jp": ["DrugX"],
-        "brand_name_jp": ["BrandX"],
-        "generic_name_en": [None],
-    })
+    df = pl.DataFrame(
+        {
+            "generic_name_jp": ["DrugX"],
+            "brand_name_jp": ["BrandX"],
+            "generic_name_en": [None],
+        }
+    )
 
     mock_post.side_effect = Exception("API Error")
 
@@ -183,17 +184,20 @@ def test_jan_bridge_ai_fallback_failure_exception(mock_post: MagicMock) -> None:
 @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "fake_key"})
 def test_jan_bridge_ai_fallback_failure_status_code(mock_post: MagicMock) -> None:
     """Tests AI fallback failure (HTTP 500 triggers raise_for_status)."""
-    df = pl.DataFrame({
-        "generic_name_jp": ["DrugX"],
-        "brand_name_jp": ["BrandX"],
-        "generic_name_en": [None],
-    })
+    df = pl.DataFrame(
+        {
+            "generic_name_jp": ["DrugX"],
+            "brand_name_jp": ["BrandX"],
+            "generic_name_en": [None],
+        }
+    )
 
     mock_response = MagicMock(spec=Response)
     mock_response.status_code = 500
     # requests.Response.raise_for_status raises HTTPError if status >= 400
     # We mock the method to raise
-    from requests.exceptions import HTTPError
+    from requests.exceptions import HTTPError  # type: ignore[import-untyped]
+
     mock_response.raise_for_status.side_effect = HTTPError("500 Error")
 
     mock_post.return_value = mock_response
@@ -239,17 +243,20 @@ def test_jan_bridge_ai_fallback_no_missing() -> None:
 
 def test_jan_bridge_ai_fallback_empty_generic_jp() -> None:
     """Tests fallback when generic name is missing."""
-    df = pl.DataFrame({
-        "generic_name_jp": [None, ""],
-        "brand_name_jp": ["B1", "B2"],
-        "generic_name_en": [None, None],
-    })
+    df = pl.DataFrame(
+        {
+            "generic_name_jp": [None, ""],
+            "brand_name_jp": ["B1", "B2"],
+            "generic_name_en": [None, None],
+        }
+    )
     result = jan_bridge_ai_fallback(df)
     assert result["_translation_status"][0] == "failed"
     assert result["_translation_status"][1] == "failed"
 
 
 # --- Tests for Utils to improve coverage ---
+
 
 def test_convert_japanese_date_iso_valid() -> None:
     """Tests date conversion happy paths."""
@@ -307,7 +314,8 @@ def test_normalize_text_encodings_fallback_failure() -> None:
     # Let's try to patch the `normalize_text` function to use a mocked list of encodings?
     # No, the list is hardcoded inside.
 
-    # If I really can't find a sequence, I might accept 96% coverage for utils or modify the code to accept an `encodings` arg.
+    # If I really can't find a sequence, I might accept 96% coverage for utils
+    # or modify the code to accept an `encodings` arg.
     # But wait, `b'\xff'` worked.
     # What about `b'\x80'` (undefined in many?)
     # In CP932, 0x80 is ...?
@@ -344,8 +352,10 @@ def test_normalize_text_encodings_fallback_failure() -> None:
 
     pass
 
+
 def test_normalize_text_none() -> None:
     assert normalize_text(None) is None
+
 
 def test_normalize_text_whitespace() -> None:
     assert normalize_text("  abc  ") == "abc"
