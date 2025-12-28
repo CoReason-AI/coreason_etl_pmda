@@ -13,7 +13,12 @@ from unittest.mock import patch
 import polars as pl
 import pytest
 
-from coreason_etl_pmda.transform_silver import jan_bridge_ai_fallback, jan_bridge_lookup, normalize_approvals
+from coreason_etl_pmda.transform_silver import (
+    call_deepseek,
+    jan_bridge_ai_fallback,
+    jan_bridge_lookup,
+    normalize_approvals,
+)
 
 
 # --- Tests for normalize_approvals ---
@@ -289,3 +294,52 @@ def test_jan_bridge_ai_missing_generic_jp() -> None:
     result = jan_bridge_ai_fallback(df)
     row = result.row(0, named=True)
     assert row["_translation_status"] == "failed"
+
+
+# --- Tests for call_deepseek ---
+
+
+def test_call_deepseek_implementation_success() -> None:
+    """Test actual implementation of call_deepseek with mocked requests."""
+    generic = "jp_drug"
+    brand = "brand"
+    expected = "en_drug"
+
+    with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test_key"}), patch(
+        "requests.post"
+    ) as mock_post:
+        # Mock successful response
+        mock_response = mock_post.return_value
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": expected}}]
+        }
+
+        result = call_deepseek(generic, brand)
+
+        assert result == expected
+
+        # Verify arguments
+        args, kwargs = mock_post.call_args
+        assert kwargs["json"]["model"] == "deepseek-chat"
+        assert kwargs["headers"]["Authorization"] == "Bearer test_key"
+        assert f"Translate the Japanese pharmaceutical ingredient '{generic}'" in kwargs["json"]["messages"][0]["content"]
+
+
+def test_call_deepseek_implementation_no_key() -> None:
+    """Test call_deepseek returns None if API key is missing."""
+    with patch.dict("os.environ", {}, clear=True):
+        result = call_deepseek("drug", "brand")
+        assert result is None
+
+
+def test_call_deepseek_implementation_failure() -> None:
+    """Test call_deepseek returns None on request failure."""
+    with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test_key"}), patch(
+        "requests.post"
+    ) as mock_post:
+        # Mock exception
+        mock_post.side_effect = Exception("Connection Error")
+
+        result = call_deepseek("drug", "brand")
+        assert result is None
