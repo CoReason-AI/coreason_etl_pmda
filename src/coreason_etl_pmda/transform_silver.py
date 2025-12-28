@@ -13,7 +13,7 @@ import os
 from typing import Any
 
 import polars as pl
-import requests  # type: ignore[import-untyped]
+import requests
 
 from coreason_etl_pmda.utils_date import convert_japanese_date_to_iso
 from coreason_etl_pmda.utils_text import normalize_text

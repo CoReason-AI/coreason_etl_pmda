@@ -11,6 +11,7 @@
 from unittest.mock import MagicMock, patch
 
 import polars as pl
+
 from coreason_etl_pmda.sources_approvals import approvals_source
 
 

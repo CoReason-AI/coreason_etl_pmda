@@ -13,6 +13,9 @@ from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
+from requests.models import Response
+
 from coreason_etl_pmda.transform_silver import (
     call_deepseek,
     jan_bridge_ai_fallback,
@@ -21,8 +24,6 @@ from coreason_etl_pmda.transform_silver import (
 )
 from coreason_etl_pmda.utils_date import convert_japanese_date_to_iso
 from coreason_etl_pmda.utils_text import normalize_text
-from polars.testing import assert_frame_equal
-from requests.models import Response  # type: ignore[import-untyped]
 
 
 @pytest.fixture  # type: ignore[misc]
@@ -196,7 +197,7 @@ def test_jan_bridge_ai_fallback_failure_status_code(mock_post: MagicMock) -> Non
     mock_response.status_code = 500
     # requests.Response.raise_for_status raises HTTPError if status >= 400
     # We mock the method to raise
-    from requests.exceptions import HTTPError  # type: ignore[import-untyped]
+    from requests.exceptions import HTTPError
 
     mock_response.raise_for_status.side_effect = HTTPError("500 Error")
 
