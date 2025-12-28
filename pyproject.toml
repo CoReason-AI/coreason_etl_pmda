@@ -10,6 +10,14 @@ packages = [{include = "coreason_etl_pmda", from = "src"}]
 [tool.poetry.dependencies]
 python = ">=3.12, <3.15"
 loguru = "^0.7.2"
+dlt = "^1.20.0"
+pydantic = "^2.12.5"
+polars = "^1.36.1"
+duckdb = "^1.4.3"
+openpyxl = "^3.1.5"
+xlsx2csv = "^0.8.4"
+beautifulsoup4 = "^4.14.3"
+lxml = "^6.0.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
