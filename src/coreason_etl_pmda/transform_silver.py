@@ -8,10 +8,102 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
-
+import hashlib
 from typing import Any
 
 import polars as pl
+
+from coreason_etl_pmda.utils_date import convert_japanese_date_to_iso
+from coreason_etl_pmda.utils_text import normalize_text
+
+# Mapping from Japanese headers to Internal Schema
+COLUMN_MAPPING = {
+    "承認番号": "approval_id",
+    "承認年月日": "approval_date",
+    "販売名": "brand_name_jp",
+    "一般的名称": "generic_name_jp",
+    "申請者氏名": "applicant_name_jp",
+    "薬効分類名": "indication",
+}
+
+
+def normalize_approvals(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Silver Layer Normalization for Approvals.
+
+    1. Rename columns (Japanese -> English).
+    2. Normalize text (NFKC, decoding).
+    3. Normalize dates (Gannen -> ISO 8601).
+    4. Generate coreason_id (Hash).
+    """
+    # 1. Rename columns
+    # We rename columns that exist in the mapping.
+    # We iterate mapping to see what we can rename.
+    rename_map = {}
+    for jp_col, en_col in COLUMN_MAPPING.items():
+        if jp_col in df.columns:
+            rename_map[jp_col] = en_col
+
+    df = df.rename(rename_map)
+
+    # Ensure required columns exist (create as null if missing, or error?)
+    # "approval_id", "approval_date", "brand_name_jp", "generic_name_jp" are critical.
+    # We'll initialize them if missing to allow partial data processing,
+    # but strictly speaking Silver should enforce schema.
+    # Let's ensure they exist.
+
+    expected_cols = list(COLUMN_MAPPING.values())
+    for col in expected_cols:
+        if col not in df.columns:
+            df = df.with_columns(pl.lit(None).cast(pl.String).alias(col))
+
+    # 2. Normalize Text
+    # Columns to normalize: brand_name_jp, generic_name_jp, applicant_name_jp, indication, and approval_id
+    # We also normalize approval_id (trim, NFKC) to ensure ID consistency.
+    text_cols = ["brand_name_jp", "generic_name_jp", "applicant_name_jp", "indication", "approval_id"]
+
+    def norm_str(s: str | None) -> str | None:
+        return normalize_text(s) if s else None
+
+    # Apply normalization
+    # We use map_elements because normalize_text handles encoding/NFKC complexity in python
+    for col in text_cols:
+        if col in df.columns:
+            # We must handle casting to string if it's not
+            # If it's Object or Utf8, fine.
+            df = df.with_columns(pl.col(col).map_elements(norm_str, return_dtype=pl.String).alias(col))
+
+    # 3. Normalize Date
+    # approval_date
+    def norm_date(s: str | None) -> str | None:
+        return convert_japanese_date_to_iso(s) if s else None
+
+    if "approval_date" in df.columns:
+        df = df.with_columns(
+            pl.col("approval_date").map_elements(norm_date, return_dtype=pl.String).alias("approval_date")
+        )
+
+    # 4. Generate coreason_id
+    # Logic: Hash("PMDA" + source_id + approval_date)
+    # source_id is approval_id.
+
+    def generate_id(struct: dict[str, Any]) -> str:
+        sid = struct.get("approval_id")
+        date = struct.get("approval_date")
+        # Handle None
+        sid_str = str(sid) if sid is not None else ""
+        date_str = str(date) if date is not None else ""
+
+        raw = f"PMDA{sid_str}{date_str}"
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    df = df.with_columns(
+        pl.struct(["approval_id", "approval_date"])
+        .map_elements(generate_id, return_dtype=pl.String)
+        .alias("coreason_id")
+    )
+
+    return df
 
 
 def jan_bridge_lookup(approvals_df: pl.DataFrame, jan_df: pl.DataFrame) -> pl.DataFrame:
@@ -26,35 +118,11 @@ def jan_bridge_lookup(approvals_df: pl.DataFrame, jan_df: pl.DataFrame) -> pl.Da
         raise ValueError("jan_df must have jan_name_jp")
 
     # Join
-    # jan_df columns: jan_name_jp, jan_name_en, inn_name_en
-    # We want generic_name_en from jan_name_en or inn_name_en?
-    # Spec says: "Output: Populate generic_name_en from the reference table."
-    # The reference table has `jan_name_en` and `inn_name_en`.
-    # Usually INN is preferred? Spec says "Map Japanese drugs to their English INN".
-    # So we prefer `inn_name_en`? Or `jan_name_en`?
-    # Spec says target is `generic_name_en`.
-    # Let's assume `jan_name_en` is the English JAN, which is usually the INN.
-    # Let's take `jan_name_en` as per Spec "bronze_ref_jan_inn (jan_name_jp, jan_name_en, inn_name_en)".
-    # Wait, spec says "Output: Populate generic_name_en from the reference table."
-    # Later "Map Japanese drugs to their English INN".
-    # The reference table schema provided in spec is "bronze_ref_jan_inn (jan_name_jp, jan_name_en, inn_name_en)".
-    # I will use `inn_name_en` if available, else `jan_name_en`.
-
-    # We'll rename `inn_name_en` (or `jan_name_en`) to `generic_name_en` after join.
-
     joined = approvals_df.join(jan_df, left_on="generic_name_jp", right_on="jan_name_jp", how="left")
 
     # Coalesce: inn_name_en -> jan_name_en -> generic_name_en (target)
-    # The spec says "Output: Populate generic_name_en".
-
-    # We need to construct the column `generic_name_en`.
-    # If `inn_name_en` exists, use it. Else `jan_name_en`.
-
-    # Polars coalesce
+    # We prefer INN if available.
     joined = joined.with_columns(pl.coalesce(["inn_name_en", "jan_name_en"]).alias("generic_name_en"))
-
-    # Drop temp columns
-    # We keep standard columns.
 
     return joined
 
@@ -66,19 +134,10 @@ def jan_bridge_ai_fallback(df: pl.DataFrame) -> pl.DataFrame:
     Invokes Mock DeepSeek API.
     """
     # Identify missing translations
-    # If generic_name_en is null
-
-    # We cannot easily iterate and update polars DF row by row efficiently for API calls without map_elements
-    # or separate list. We'll extract rows needing translation.
-
-    # Filter for missing
     missing_mask = df["generic_name_en"].is_null()
 
     if not missing_mask.any():
         return df
-
-    # Apply translation
-    # We define a function to call the API
 
     def translate(struct: dict[str, Any]) -> str | None:
         generic_jp = struct.get("generic_name_jp")
@@ -87,67 +146,7 @@ def jan_bridge_ai_fallback(df: pl.DataFrame) -> pl.DataFrame:
         if not generic_jp:
             return None
 
-        # Mock DeepSeek API
-        # "Prompt: Translate ... Context: Brand ..."
-        # For this implementation, we Mock it.
-        # But we need to allow testing to mock this internal call.
-        # We can put the API call in a separate function `call_deepseek` and mock that.
-
         return call_deepseek(generic_jp, str(brand_jp) if brand_jp else "")
-
-    # We use map_elements (apply)
-    # Note: map_elements in Polars 1.0+?
-    # We pass a struct of necessary columns.
-
-    # We only update the nulls.
-    # We can create a new series for the missing ones.
-
-    # However, Polars `map_elements` is slow (python loop).
-    # Since this is an AI call, latency is dominated by network, so python loop is fine.
-
-    # We need to apply on the filtered rows and then update the original DF.
-
-    # Create a small DF of missing
-    # missing_df = df.filter(missing_mask)
-
-    # Apply translation
-    # We iterate rows manually below, so this select is unused but shows intent.
-    # We can remove it to satisfy linter.
-    # translations = missing_df.select(
-    #     pl.struct(["generic_name_jp", "brand_name_jp"])
-    #     .map_elements(translate, return_dtype=pl.String)
-    #     .alias("generic_name_en_ai")
-    # )
-
-    # We need to merge this back.
-    # A robust way is to join on index or PK?
-    # Or just update the column conditionally?
-    # Polars update:
-    # df = df.with_columns(
-    #    pl.when(pl.col("generic_name_en").is_null())
-    #    .then(pl.struct(...).map_elements(...))
-    #    .otherwise(pl.col("generic_name_en"))
-    # )
-
-    # This runs map_elements only on the needed rows?
-    # Polars executes expressions eagerly or lazy. map_elements is opaque.
-    # It might run on all if not careful.
-    # But inside `when().then()`, it should apply only to true?
-    # Actually `map_elements` on a Series/Expr applies to the whole Series usually.
-    # So we should be careful.
-
-    # Better to process only missing, then stack/update?
-    # But `update` requires join key or index alignment.
-
-    # Let's try the `when-then` approach but optimized:
-    # We can't optimize map_elements easily inside expression if we want to avoid calling it for existing ones.
-    # A python-side iteration might be safer for "Separate Step".
-
-    # Strategy:
-    # 1. Convert DF to dicts/rows.
-    # 2. Iterate and update.
-    # 3. Re-create DF.
-    # This is safe and simple for this "Atomic Unit" context.
 
     rows = df.to_dicts()
     updated_rows = []
