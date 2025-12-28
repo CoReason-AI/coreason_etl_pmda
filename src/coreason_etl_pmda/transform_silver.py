@@ -9,9 +9,11 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 import hashlib
+import os
 from typing import Any
 
 import polars as pl
+import requests
 
 from coreason_etl_pmda.utils_date import convert_japanese_date_to_iso
 from coreason_etl_pmda.utils_text import normalize_text
@@ -167,11 +169,37 @@ def jan_bridge_ai_fallback(df: pl.DataFrame) -> pl.DataFrame:
     return pl.DataFrame(updated_rows, schema_overrides=df.schema)
 
 
-def call_deepseek(generic_name_jp: str, brand_name_jp: str) -> str | None:  # pragma: no cover
+def call_deepseek(generic_name_jp: str, brand_name_jp: str) -> str | None:
     """
-    Mock DeepSeek API call.
-    In real life, this calls the API.
-    Here we return None (fail) or mock via test patching.
+    Calls the DeepSeek API (or compatible) to translate the Japanese generic name.
     """
-    # Return None by default (Miss)
-    return None
+    api_key = os.getenv("DEEPSEEK_API_KEY")
+    if not api_key:
+        # If no key, we can't call.
+        return None
+
+    base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/chat/completions")
+
+    prompt = (
+        f"Translate the Japanese pharmaceutical ingredient '{generic_name_jp}' to its English INN. "
+        f"Context: Brand is '{brand_name_jp}'. Return ONLY the English name."
+    )
+
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.0,
+    }
+
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+    try:
+        response = requests.post(base_url, json=payload, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        # Parse: data["choices"][0]["message"]["content"]
+        content = data["choices"][0]["message"]["content"]
+        return content.strip() if content else None
+    except Exception:
+        # Log error?
+        return None
