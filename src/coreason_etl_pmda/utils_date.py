@@ -27,7 +27,8 @@ ERA_START_YEARS = {
 # - "R2.5.1" (though usually full kanji/names are used in docs)
 # We will focus on the structure described in the problem statement: "Reiwa Gannen" or "Reiwa 2"
 # and we need to output ISO 8601 YYYY-MM-DD.
-# The input might be a full string or just the year part. The spec says "Convert Japanese Era (Reiwa 2) to ISO 8601 (2020-01-01)".
+# The input might be a full string or just the year part. The spec says "Convert Japanese Era (Reiwa 2) to
+# ISO 8601 (2020-01-01)".
 # If only year is provided, we might default to Jan 1? Or does it expect full date?
 # "Reiwa 2 to ISO 8601 (2020-01-01)" suggests handling full dates, or defaulting.
 # Let's assume we need to parse full dates where possible, but the Gannen logic is the critical part.

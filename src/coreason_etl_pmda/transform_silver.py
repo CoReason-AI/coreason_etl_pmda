@@ -68,8 +68,8 @@ def jan_bridge_ai_fallback(df: pl.DataFrame) -> pl.DataFrame:
     # Identify missing translations
     # If generic_name_en is null
 
-    # We cannot easily iterate and update polars DF row by row efficiently for API calls without map_elements or separate list.
-    # We'll extract rows needing translation.
+    # We cannot easily iterate and update polars DF row by row efficiently for API calls without map_elements
+    # or separate list. We'll extract rows needing translation.
 
     # Filter for missing
     missing_mask = df["generic_name_en"].is_null()

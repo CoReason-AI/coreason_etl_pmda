@@ -41,7 +41,8 @@ def transform_approvals_gold(approvals_df: pl.DataFrame) -> pl.DataFrame:
 
     # Helper for applying normalization
     # Since our normalize_text is python, we map elements.
-    # Note: For large datasets, a native polars expression or rust plugin is better, but here we stick to atomic python util.
+    # Note: For large datasets, a native polars expression or rust plugin is better,
+    # but here we stick to atomic python util.
 
     def norm_str(s: str | None) -> str | None:
         return normalize_text(s) if s else None  # pragma: no cover
@@ -53,7 +54,8 @@ def transform_approvals_gold(approvals_df: pl.DataFrame) -> pl.DataFrame:
     # Source names from scraped Excel might vary. We'll assume standardized names for this function
     # or mappable via config.
     # For this atomic unit, we assume the input DF has columns:
-    # `approval_id`, `brand_name_jp`, `generic_name_jp`, `applicant_name_jp`, `approval_date`, `indication`, `review_report_url`, `generic_name_en`, `application_type`
+    # `approval_id`, `brand_name_jp`, `generic_name_jp`, `applicant_name_jp`,
+    # `approval_date`, `indication`, `review_report_url`, `generic_name_en`, `application_type`
 
     # Check required columns
     required = ["approval_id", "brand_name_jp", "generic_name_jp", "approval_date"]

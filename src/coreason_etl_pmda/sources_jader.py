@@ -25,7 +25,7 @@ from dlt.sources.helpers import requests
 @dlt.resource(name="bronze_jader", write_disposition="replace")  # type: ignore[misc]
 def jader_source(
     url: str = "https://www.pmda.go.jp/safety/info-services/drugs/adr-info/suspected-adr/0008.html",
-) -> dlt.sources.DltSource:
+) -> dlt.sources.DltSource:  # noqa: E501
     """
     Ingests JADER data.
     1. Scrapes the page to find the latest Zip file (or all zip files if multiple).
@@ -48,8 +48,8 @@ def jader_source(
     Or structured?
     "Ingestion Logic: JADER: Download Zip -> Extract CSVs (demo, drug, reac) -> Load to Bronze."
 
-    If we want separate tables in Bronze, we should return a list of resources or use a generator that yields `dlt.DynamicTable`.
-    Let's use a generator that yields data marked with table name.
+    If we want separate tables in Bronze, we should return a list of resources or use a generator that yields
+    `dlt.DynamicTable`. Let's use a generator that yields data marked with table name.
     """
 
     # 1. Scrape

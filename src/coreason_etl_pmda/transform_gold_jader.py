@@ -31,7 +31,8 @@ def transform_jader_gold(demo_df: pl.DataFrame, drug_df: pl.DataFrame, reac_df: 
 
     # Check inputs
     # We assume 'id' column exists in all for joining.
-    # JADER usually uses an ID column. Spec says "Relational CSVs ... no foreign key constraints defined in the file headers".
+    # JADER usually uses an ID column. Spec says "Relational CSVs ... no foreign key constraints defined
+    # in the file headers".
     # But we assume there is a join key. Usually `id` or `case_id`.
     # Let's assume `id` based on standard JADER structure (識別番号).
 
