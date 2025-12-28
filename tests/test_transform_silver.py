@@ -339,3 +339,60 @@ def test_call_deepseek_implementation_failure() -> None:
 
         result = call_deepseek("drug", "brand")
         assert result is None
+
+
+def test_call_deepseek_malformed_response() -> None:
+    """Test call_deepseek returns None when response JSON is malformed."""
+    with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test_key"}), patch("requests.post") as mock_post:
+        mock_response = mock_post.return_value
+        mock_response.raise_for_status.return_value = None
+        # Missing 'choices' key
+        mock_response.json.return_value = {"error": "some error"}
+
+        result = call_deepseek("drug", "brand")
+        assert result is None
+
+
+def test_call_deepseek_empty_content() -> None:
+    """Test call_deepseek returns None when content is empty."""
+    with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test_key"}), patch("requests.post") as mock_post:
+        mock_response = mock_post.return_value
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {"choices": [{"message": {"content": ""}}]}
+
+        result = call_deepseek("drug", "brand")
+        assert result is None
+
+
+def test_call_deepseek_whitespace_stripping() -> None:
+    """Test call_deepseek strips whitespace from result."""
+    with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test_key"}), patch("requests.post") as mock_post:
+        mock_response = mock_post.return_value
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {"choices": [{"message": {"content": "  Aspirin  \n"}}]}
+
+        result = call_deepseek("drug", "brand")
+        assert result == "Aspirin"
+
+
+def test_call_deepseek_timeout() -> None:
+    """Test call_deepseek returns None on timeout."""
+    import requests
+
+    with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test_key"}), patch("requests.post") as mock_post:
+        mock_post.side_effect = requests.Timeout("Timeout")
+
+        result = call_deepseek("drug", "brand")
+        assert result is None
+
+
+def test_call_deepseek_401_unauthorized() -> None:
+    """Test call_deepseek returns None on HTTP error."""
+    import requests
+
+    with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test_key"}), patch("requests.post") as mock_post:
+        mock_response = mock_post.return_value
+        mock_response.raise_for_status.side_effect = requests.HTTPError("401 Unauthorized")
+
+        result = call_deepseek("drug", "brand")
+        assert result is None
