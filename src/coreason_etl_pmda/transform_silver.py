@@ -58,8 +58,9 @@ def normalize_approvals(df: pl.DataFrame) -> pl.DataFrame:
             df = df.with_columns(pl.lit(None).cast(pl.String).alias(col))
 
     # 2. Normalize Text
-    # Columns to normalize: brand_name_jp, generic_name_jp, applicant_name_jp, indication
-    text_cols = ["brand_name_jp", "generic_name_jp", "applicant_name_jp", "indication"]
+    # Columns to normalize: brand_name_jp, generic_name_jp, applicant_name_jp, indication, and approval_id
+    # We also normalize approval_id (trim, NFKC) to ensure ID consistency.
+    text_cols = ["brand_name_jp", "generic_name_jp", "applicant_name_jp", "indication", "approval_id"]
 
     def norm_str(s: str | None) -> str | None:
         return normalize_text(s) if s else None

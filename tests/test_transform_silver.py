@@ -27,9 +27,6 @@ def test_normalize_approvals_basic() -> None:
         "一般的名称": ["Generic A", "Generic B"],
         "申請者氏名": ["Company A", "Company B"],
         "薬効分類名": ["Indication A", "Indication B"],
-        # Extra column should be preserved? Or dropped?
-        # The function renames mapped ones and passes others through or selects?
-        # The function `df.rename` keeps others.
         "Extra": ["Keep", "Keep"],
     }
     df = pl.DataFrame(data)
@@ -51,7 +48,6 @@ def test_normalize_approvals_basic() -> None:
     assert dates[1] == "2018-04-01"  # Heisei 30
 
     # Check coreason_id generation
-    # PMDA + 12345 + 2020-05-01
     ids = result["coreason_id"].to_list()
     assert len(ids) == 2
     assert isinstance(ids[0], str)
@@ -60,7 +56,6 @@ def test_normalize_approvals_basic() -> None:
 
 def test_normalize_approvals_text_normalization() -> None:
     # Test half-width katakana and unicode issues
-    # ｱｲｳｴｵ -> アイウエオ (Half to Full)
     data = {
         "承認番号": ["1"],
         "販売名": ["ｱｲｳｴｵ"],  # Half-width
@@ -89,9 +84,6 @@ def test_normalize_approvals_missing_columns() -> None:
     assert "brand_name_jp" in result.columns
     assert result["brand_name_jp"][0] is None
     assert "coreason_id" in result.columns
-    # ID generation handles None?
-    # Logic: f"PMDA{sid}{date}" -> "PMDA1" (date is None/Empty)
-    # Check that it doesn't crash
 
 
 def test_normalize_approvals_id_consistency() -> None:
@@ -103,13 +95,98 @@ def test_normalize_approvals_id_consistency() -> None:
     df = pl.DataFrame(data)
     result = normalize_approvals(df)
 
-    # PMDA + 100 + 2020-01-01
     import hashlib
 
     expected_raw = "PMDA1002020-01-01"
     expected_hash = hashlib.sha256(expected_raw.encode("utf-8")).hexdigest()
 
     assert result["coreason_id"][0] == expected_hash
+
+
+def test_normalize_approvals_id_robustness() -> None:
+    # Ensure IDs are robust against whitespace/width variance in approval_id
+    data = {
+        "承認番号": ["  123  ", "１２３"],  # Whitespace, Full-width
+        "承認年月日": ["R2.1.1", "R2.1.1"],
+    }
+    df = pl.DataFrame(data)
+    result = normalize_approvals(df)
+
+    id1 = result["coreason_id"][0]
+    id2 = result["coreason_id"][1]
+
+    # Both should normalize to "123" and produce same hash
+    assert id1 == id2
+
+    # Check that approval_id column itself is normalized
+    assert result["approval_id"][0] == "123"
+    assert result["approval_id"][1] == "123"
+
+
+def test_normalize_approvals_date_complexity() -> None:
+    # Test various complex date formats and invalid dates
+    data = {
+        "承認番号": ["1", "2", "3", "4"],
+        "承認年月日": [
+            "Reiwa Gannen.5.1",  # Gannen
+            "R2/05/01",  # Slash
+            "Reiwa 2 Year 5 Month 1 Day",  # Complex (Depends on regex robustness)
+            "Reiwa 2.13.1",  # Invalid month
+        ],
+    }
+
+    df = pl.DataFrame(data)
+    result = normalize_approvals(df)
+
+    dates = result["approval_date"].to_list()
+
+    assert dates[0] == "2019-05-01"
+    assert dates[1] == "2020-05-01"
+    assert dates[2] == "2020-05-01"
+    assert dates[3] is None  # Invalid date returns None
+
+
+def test_normalize_approvals_mixed_input() -> None:
+    # Mixed valid and invalid rows
+    data = {
+        "承認番号": ["1", "2"],
+        "承認年月日": ["R2.1.1", None],  # Null date
+        "販売名": ["Valid", None],  # Null text
+    }
+    df = pl.DataFrame(data)
+    result = normalize_approvals(df)
+
+    assert result["approval_date"][1] is None
+    assert result["brand_name_jp"][1] is None
+
+    # ID should handle None date
+    # PMDA + 2 + ""
+    import hashlib
+
+    expected_raw = "PMDA2"
+    expected_hash = hashlib.sha256(expected_raw.encode("utf-8")).hexdigest()
+    assert result["coreason_id"][1] == expected_hash
+
+
+def test_normalize_approvals_null_empty_behavior() -> None:
+    # Empty strings vs Null
+    data = {
+        "承認番号": ["", None],
+        "承認年月日": ["", None],
+    }
+    df = pl.DataFrame(data)
+    result = normalize_approvals(df)
+
+    # Empty string date -> None (utils_date handles empty string?)
+    assert result["approval_date"][0] is None
+    assert result["approval_date"][1] is None
+
+    # ID for empty string ID vs None ID
+    # Code: `str(sid) if sid is not None else ""`
+    # If sid is "", `str("")` is "".
+    # If sid is None, `""`.
+    # So they produce same ID hash.
+    assert result["coreason_id"][0] == result["coreason_id"][1]
 
 
 # --- Existing Tests for JAN Bridge ---
