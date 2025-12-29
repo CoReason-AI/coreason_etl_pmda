@@ -13,9 +13,6 @@ from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
-from polars.testing import assert_frame_equal
-from requests.models import Response
-
 from coreason_etl_pmda.transform_silver import (
     call_deepseek,
     jan_bridge_ai_fallback,
@@ -24,6 +21,8 @@ from coreason_etl_pmda.transform_silver import (
 )
 from coreason_etl_pmda.utils_date import convert_japanese_date_to_iso
 from coreason_etl_pmda.utils_text import normalize_text
+from polars.testing import assert_frame_equal
+from requests.models import Response
 
 
 @pytest.fixture  # type: ignore[misc]
@@ -127,8 +126,14 @@ def test_jan_bridge_lookup(sample_approvals_raw: pl.DataFrame, sample_jan_ref: p
 def test_jan_bridge_lookup_missing_columns() -> None:
     """Tests validation for missing columns."""
     df = pl.DataFrame({"a": [1]})
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="approvals_df must have generic_name_jp"):
         jan_bridge_lookup(df, df)
+
+    # Test missing in jan_df
+    df_approvals = pl.DataFrame({"generic_name_jp": ["A"]})
+    df_jan = pl.DataFrame({"a": [1]})
+    with pytest.raises(ValueError, match="jan_df must have jan_name_jp"):
+        jan_bridge_lookup(df_approvals, df_jan)
 
 
 @patch("coreason_etl_pmda.transform_silver.requests.post")
@@ -286,72 +291,6 @@ def test_normalize_text_encodings_valid() -> None:
     # Shift-JIS (Katakana)
     sjis_bytes = "ﾃｽﾄ".encode("shift_jis")
     assert normalize_text(sjis_bytes) == "テスト"
-
-
-def test_normalize_text_encodings_fallback_failure() -> None:
-    """Tests text normalization failure (exhaust all encodings)."""
-    # It is hard to find a byte sequence that fails UTF-8, CP932, EUC-JP, AND Shift-JIS.
-    # So we mock the decode method of the bytes object?
-    # Builtin types are hard to mock.
-    # Instead, we can mock the `text.decode` call by mocking the input if it wasn't bytes, but it IS bytes.
-    # Better: We rely on the fact that we can pass a Mock object that behaves like bytes but raises error on decode?
-    # `normalize_text` checks `isinstance(text, bytes)`.
-    # So we can't pass a Mock unless it inherits bytes (which is immutable and hard).
-
-    # Alternative: We patch `bytes.decode`? No, global side effects.
-
-    # We need a sequence that fails.
-    # CP932 accepts almost everything except some undefined ranges.
-    # But usually 0xFF is mapped or ignored?
-    # Actually, if we use strict errors, many things fail.
-    # But the code does `text.decode(enc)` which defaults to 'strict' errors.
-    # So we just need bytes that are invalid in all these encodings.
-    # A sequence like `b'\xff\xff\xff'` is often invalid in UTF-8.
-    # In CP932?
-
-    # Let's try to construct a failure by using a Mock that passes isinstance check?
-    # No.
-
-    # Let's try to patch the `normalize_text` function to use a mocked list of encodings?
-    # No, the list is hardcoded inside.
-
-    # If I really can't find a sequence, I might accept 96% coverage for utils
-    # or modify the code to accept an `encodings` arg.
-    # But wait, `b'\xff'` worked.
-    # What about `b'\x80'` (undefined in many?)
-    # In CP932, 0x80 is ...?
-
-    # Let's try `b'\xff\xfe\xfd'`?
-    # If I can't trigger it easily, maybe the code is too robust (which is good), or "dead code" (unreachable).
-    # But logically it is reachable if decode fails.
-
-    # I will simply use a "MagicMock" approach by modifying the code? No, "Edit Source, Not Artifacts".
-
-    # Let's use `unittest.mock.patch` on `bytes.decode` is risky.
-    # Maybe I can just pass an object that IS NOT bytes but logic treats it?
-    # Code: `if isinstance(text, bytes):`
-
-    # I will try one more sequence: `b'\x00\xff'`?
-
-    # Actually, I can use `pytest.mark.parametrize` to try a few, but I want to be deterministic.
-    # If I cannot cover it, I will note it.
-    # But wait, I can use `unittest.mock` to patch the `encodings_to_try`?
-    # The list is defined INSIDE the function.
-
-    # Final attempt: invalid unicode surrogate?
-
-    # Let's skip the "Failure" test for encodings if it's too hard, and rely on `test_normalize_text_none` and others.
-    # But I need 100% coverage.
-    # I will try to use a Mock object that returns True for `isinstance(obj, bytes)`?
-    # We can patch `builtins.isinstance`? Too dangerous.
-
-    # What if I change the code to `encodings_to_try = kwargs.get('encodings', [...])`?
-    # The code is `utils_text.py`. I can modify it to be more testable?
-    # "Edit Source..."
-    # "If the AGENTS.md includes programmatic checks... you MUST run all of them".
-    # 100% coverage is mandatory.
-
-    pass
 
 
 def test_normalize_text_none() -> None:
