@@ -10,122 +10,156 @@
 
 from unittest.mock import MagicMock, patch
 
-import polars as pl
 from coreason_etl_pmda.sources_approvals import approvals_source
 
 
-def test_approvals_source() -> None:
-    # Mock request to main page
+def test_approvals_source_scraping_japanese() -> None:
+    # HTML with Japanese headers
     html_content = """
     <html>
         <body>
-            <a href="data_2024.xlsx">2024 Data</a>
-            <a href="data_2023.xls">2023 Data</a>
-            <a href="other.pdf">Guidance</a>
+            <table>
+                <tr>
+                    <th>承認年月日</th>
+                    <th>販売名</th>
+                    <th>一般的名称</th>
+                    <th>申請者氏名</th>
+                    <th>審査報告書</th>
+                    <th>薬効分類名</th>
+                </tr>
+                <tr>
+                    <td>令和2年1月1日</td>
+                    <td>ブランドA</td>
+                    <td>ジェネリックA</td>
+                    <td>会社A</td>
+                    <td><a href="report_a.pdf">PDF</a></td>
+                    <td>効能A</td>
+                </tr>
+                <tr>
+                    <td>令和2年2月1日</td>
+                    <td>ブランドB</td>
+                    <td>ジェネリックB</td>
+                    <td>会社B</td>
+                    <td>-</td>
+                    <td>効能B</td>
+                </tr>
+            </table>
         </body>
     </html>
     """
 
-    # Mock DataFrames
-    df_2024 = pl.DataFrame({"id": [1], "name": ["Drug A"]})
-    df_2023 = pl.DataFrame({"id": [2], "name": ["Drug B"]})
+    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.content = html_content.encode("utf-8")
+        mock_resp.raise_for_status.return_value = None
+        mock_get.return_value = mock_resp
 
-    with (
-        patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get,
-        patch("coreason_etl_pmda.sources_approvals.pl.read_excel") as mock_read_excel,
-        patch("dlt.current.source_state", return_value={}),
-    ):
-        # Setup mock responses
-        # First call is main page, subsequent are files
-        def side_effect(url: str) -> MagicMock:
-            resp = MagicMock()
-            resp.raise_for_status.return_value = None
-            if url == "http://example.com/main":
-                resp.content = html_content.encode("utf-8")
-            elif url == "http://example.com/data_2024.xlsx":
-                resp.content = b"excel2024"
-            elif url == "http://example.com/data_2023.xls":
-                resp.content = b"excel2023"
-            else:
-                resp.status_code = 404
-                resp.raise_for_status.side_effect = Exception("404")
-            return resp
-
-        mock_get.side_effect = side_effect
-
-        # Setup read_excel side effect
-        # We need to match the content or just return based on call count/args?
-        # Since we use BytesIO, we can check the bytes content if we want strictness.
-        # But simpler to just return list of DFs.
-        mock_read_excel.side_effect = [df_2024, df_2023]
-
-        resource = approvals_source(url="http://example.com/main")
+        resource = approvals_source(url="http://example.com/jp")
         data = list(resource)
 
         assert len(data) == 2
-        assert data[0]["name"] == "Drug A"
-        assert data[0]["_source_url"] == "http://example.com/data_2024.xlsx"
-        assert data[1]["name"] == "Drug B"
-        assert data[1]["_source_url"] == "http://example.com/data_2023.xls"
+
+        # Row 1
+        assert data[0]["brand_name_jp"] == "ブランドA"
+        assert data[0]["generic_name_jp"] == "ジェネリックA"
+        assert data[0]["approval_date"] == "令和2年1月1日"
+        assert data[0]["review_report_url"] == "http://example.com/report_a.pdf"
+        assert data[0]["indication"] == "効能A"
+
+        # Row 2
+        assert data[1]["brand_name_jp"] == "ブランドB"
+        assert data[1]["review_report_url"] is None
 
 
-def test_approvals_source_state() -> None:
-    # Test that visited URLs are skipped
+def test_approvals_source_whitespace_japanese() -> None:
+    """Test robustness against whitespace in Japanese headers."""
     html_content = """
     <html>
         <body>
-            <a href="data_2024.xlsx">2024 Data</a>
+            <table>
+                <tr>
+                    <th> 承認  年月日 </th>
+                    <th>販\n売\n名</th>
+                    <th>一般的名称</th>
+                </tr>
+                <tr>
+                    <td>R2.1.1</td>
+                    <td>Name</td>
+                    <td>Gen</td>
+                </tr>
+            </table>
         </body>
     </html>
     """
-
-    state = {"visited_urls": {"http://example.com/data_2024.xlsx": True}}
-
-    with (
-        patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get,
-        patch("coreason_etl_pmda.sources_approvals.pl.read_excel") as mock_read_excel,
-        patch("dlt.current.source_state", return_value=state),
-    ):
+    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_get.return_value = mock_resp
 
-        resource = approvals_source(url="http://example.com/main")
-        data = list(resource)
-
-        # Should be empty as it's visited
-        assert len(data) == 0
-        mock_read_excel.assert_not_called()
+        data = list(approvals_source())
+        assert len(data) == 1
+        assert data[0]["brand_name_jp"] == "Name"
 
 
-def test_approvals_source_error_handling() -> None:
-    # One file fails, should continue?
-    # Our code catches Exception and prints, so it should continue or finish empty.
+def test_approvals_source_multiple_tables_japanese() -> None:
+    """Test multiple tables on Japanese page."""
     html_content = """
     <html>
         <body>
-            <a href="bad.xlsx">Bad Data</a>
+            <h1>新薬</h1>
+            <table>
+                <tr><th>販売名</th><th>一般的名称</th><th>承認年月日</th></tr>
+                <tr><td>A</td><td>G</td><td>D</td></tr>
+            </table>
+            <h1>後発品</h1>
+            <table>
+                <tr><th>販売名</th><th>一般的名称</th><th>承認年月日</th></tr>
+                <tr><td>B</td><td>G2</td><td>D2</td></tr>
+            </table>
         </body>
     </html>
     """
+    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.content = html_content.encode("utf-8")
+        mock_get.return_value = mock_resp
 
-    with (
-        patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get,
-        patch("coreason_etl_pmda.sources_approvals.pl.read_excel", side_effect=Exception("Corrupt")),
-        patch("dlt.current.source_state", return_value={}),
-    ):
+        data = list(approvals_source())
+        assert len(data) == 2
+        assert data[0]["brand_name_jp"] == "A"
+        assert data[1]["brand_name_jp"] == "B"
 
-        def side_effect(url: str) -> MagicMock:
-            resp = MagicMock()
-            if url == "http://example.com/main":
-                resp.content = html_content.encode("utf-8")
-            else:
-                resp.content = b"bad"
-            return resp
 
-        mock_get.side_effect = side_effect
+def test_approvals_source_ignore_irrelevant_tables() -> None:
+    html_content = """
+    <html>
+        <body>
+            <!-- Truly empty table to hit 'if not header_row: continue' -->
+            <table id="empty">
+            </table>
 
-        resource = approvals_source(url="http://example.com/main")
-        data = list(resource)
+            <table><tr><th>Other</th></tr><tr><td>1</td></tr></table>
+            <table>
+                <!-- Table with headers but mismatched cells -->
+                <tr><th>販売名</th><th>一般的名称</th><th>承認年月日</th></tr>
+                <tr><td>OnlyOneCell</td></tr>
+            </table>
+             <table>
+                <!-- Empty header row -->
+                <tr></tr>
+             </table>
+            <table>
+                <tr><th>販売名</th><th>一般的名称</th><th>承認年月日</th></tr>
+                <tr><td>A</td><td>G</td><td>D</td></tr>
+            </table>
+        </body>
+    </html>
+    """
+    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.content = html_content.encode("utf-8")
+        mock_get.return_value = mock_resp
 
-        assert len(data) == 0
+        data = list(approvals_source())
+        assert len(data) == 1
+        assert data[0]["brand_name_jp"] == "A"
