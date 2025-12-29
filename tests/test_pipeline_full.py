@@ -9,7 +9,8 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 import os
-from unittest.mock import patch
+from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 import duckdb
 import polars as pl
@@ -62,13 +63,13 @@ BRONZE_JADER_REAC = pl.DataFrame(
 )
 
 
-@pytest.fixture
-def temp_duckdb(tmp_path):
+@pytest.fixture  # type: ignore[misc]
+def temp_duckdb(tmp_path: Path) -> str:
     db_file = tmp_path / "test_pmda.duckdb"
     return str(db_file)
 
 
-def test_pipeline_full_e2e(temp_duckdb):
+def test_pipeline_full_e2e(temp_duckdb: str) -> None:
     """
     Tests the full pipeline orchestration.
     Mocks Bronze ingestion by pre-populating the DuckDB.
@@ -134,7 +135,7 @@ def test_pipeline_full_e2e(temp_duckdb):
     con.close()
 
 
-def test_pipeline_missing_keys(temp_duckdb):
+def test_pipeline_missing_keys(temp_duckdb: str) -> None:
     """
     Test fallback when API key is missing (AI skipped).
     """
@@ -185,7 +186,7 @@ def test_pipeline_missing_keys(temp_duckdb):
     con.close()
 
 
-def test_pipeline_empty_db(temp_duckdb):
+def test_pipeline_empty_db(temp_duckdb: str) -> None:
     """
     Test pipeline runs gracefully when Bronze tables are missing.
     Should skip Silver/Gold steps with warnings.
@@ -210,7 +211,7 @@ def test_pipeline_empty_db(temp_duckdb):
     con.close()
 
 
-def test_pipeline_partial_tables(temp_duckdb):
+def test_pipeline_partial_tables(temp_duckdb: str) -> None:
     """
     Test missing JAN table (lookup skip) and missing some JADER tables.
     """
@@ -241,7 +242,7 @@ def test_pipeline_partial_tables(temp_duckdb):
     con.close()
 
 
-def test_pipeline_exception_approvals(temp_duckdb):
+def test_pipeline_exception_approvals(temp_duckdb: str) -> None:
     """
     Test that exceptions in Silver Approvals are caught and re-raised.
     """
@@ -257,7 +258,7 @@ def test_pipeline_exception_approvals(temp_duckdb):
                 run_full_pipeline()
 
 
-def test_pipeline_exception_jader(temp_duckdb):
+def test_pipeline_exception_jader(temp_duckdb: str) -> None:
     """
     Test that exceptions in Silver JADER are caught and re-raised.
     """
@@ -282,7 +283,7 @@ def test_pipeline_exception_jader(temp_duckdb):
                 run_full_pipeline()
 
 
-def test_pipeline_with_api_key(temp_duckdb):
+def test_pipeline_with_api_key(temp_duckdb: str) -> None:
     """
     Test pipeline with DEEPSEEK_API_KEY present (AI Fallback path).
     """
@@ -300,7 +301,7 @@ def test_pipeline_with_api_key(temp_duckdb):
         with patch("coreason_etl_pmda.pipeline_full.jan_bridge_ai_fallback") as mock_ai:
             # Mock return value to be the same dataframe (modified)
             # We don't need actual modification, just need to see if it's called
-            def side_effect(df):
+            def side_effect(df: pl.DataFrame) -> pl.DataFrame:
                 return df.with_columns(pl.lit("ai_translated").alias("_translation_status"))
 
             mock_ai.side_effect = side_effect
