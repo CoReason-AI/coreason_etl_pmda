@@ -134,6 +134,10 @@ def test_approvals_source_ignore_irrelevant_tables() -> None:
     html_content = """
     <html>
         <body>
+            <!-- Truly empty table to hit 'if not header_row: continue' -->
+            <table id="empty">
+            </table>
+
             <table><tr><th>Other</th></tr><tr><td>1</td></tr></table>
             <table>
                 <!-- Table with headers but mismatched cells -->
