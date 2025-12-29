@@ -8,8 +8,8 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
-from urllib.parse import urljoin
 import re
+from urllib.parse import urljoin
 
 import dlt
 from bs4 import BeautifulSoup, Tag
@@ -58,7 +58,7 @@ def approvals_source(
         for th in header_row.find_all(["th", "td"]):
             text = th.get_text(strip=True)
             # Normalize whitespace
-            text = re.sub(r"\s+", "", text) # Japanese text usually doesn't need spaces for keyword matching
+            text = re.sub(r"\s+", "", text)  # Japanese text usually doesn't need spaces for keyword matching
             headers.append(text)
 
         # Heuristic to identify the correct table using Japanese keywords
@@ -89,9 +89,9 @@ def approvals_source(
                         record["generic_name_jp"] = cell_text
                     elif "申請者氏名" in header:
                         record["applicant_name_jp"] = cell_text
-                    elif "薬効" in header: # 薬効分類名 (Indication class)
+                    elif "薬効" in header:  # 薬効分類名 (Indication class)
                         record["indication"] = cell_text
-                    elif "報告書" in header or "概要" in header: # 審査報告書 / 審査概要
+                    elif "報告書" in header or "概要" in header:  # 審査報告書 / 審査概要
                         # Extract URL
                         a_tag = cell.find("a", href=True)
                         if a_tag:

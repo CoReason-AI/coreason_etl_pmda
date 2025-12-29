@@ -9,7 +9,9 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 from unittest.mock import MagicMock, patch
+
 from coreason_etl_pmda.sources_approvals import approvals_source
+
 
 def test_approvals_source_scraping_japanese() -> None:
     # HTML with Japanese headers
@@ -68,6 +70,7 @@ def test_approvals_source_scraping_japanese() -> None:
         assert data[1]["brand_name_jp"] == "ブランドB"
         assert data[1]["review_report_url"] is None
 
+
 def test_approvals_source_whitespace_japanese() -> None:
     """Test robustness against whitespace in Japanese headers."""
     html_content = """
@@ -97,6 +100,7 @@ def test_approvals_source_whitespace_japanese() -> None:
         assert len(data) == 1
         assert data[0]["brand_name_jp"] == "Name"
 
+
 def test_approvals_source_multiple_tables_japanese() -> None:
     """Test multiple tables on Japanese page."""
     html_content = """
@@ -124,6 +128,7 @@ def test_approvals_source_multiple_tables_japanese() -> None:
         assert len(data) == 2
         assert data[0]["brand_name_jp"] == "A"
         assert data[1]["brand_name_jp"] == "B"
+
 
 def test_approvals_source_ignore_irrelevant_tables() -> None:
     html_content = """
