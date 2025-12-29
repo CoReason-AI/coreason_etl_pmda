@@ -38,13 +38,25 @@ CHARACTERIZATION_MAPPING = {
 }
 
 
+import re
+
 def _normalize_common(df: pl.DataFrame, mapping: dict[str, str]) -> pl.DataFrame:
     """
     Common normalization logic:
     1. Rename columns based on mapping.
     2. Normalize text (NFKC) for all string columns.
     """
-    # Rename
+    # Normalize headers first (strip whitespace)
+    # This ensures "識別 番号" maps to "識別番号" if we clean it first.
+    # However, we can't just strip keys in mapping, we must strip DF columns.
+
+    # We rename columns in DF to be whitespace-free if they match mapping keys sans whitespace.
+    # Or simpler: normalize all DF columns by removing whitespace.
+
+    new_cols = {col: re.sub(r"\s+", "", col) for col in df.columns}
+    df = df.rename(new_cols)
+
+    # Rename based on mapping
     rename_map = {}
     for jp_col, en_col in mapping.items():
         if jp_col in df.columns:
