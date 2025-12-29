@@ -9,6 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 from urllib.parse import urljoin
+import re
 
 import dlt
 from bs4 import BeautifulSoup, Tag
@@ -73,6 +74,8 @@ def approvals_source(
 
         for th in header_row.find_all(["th", "td"]):
             text = th.get_text(strip=True).lower()
+            # Normalize whitespace: replace newlines/tabs/multiple spaces with single space
+            text = re.sub(r"\s+", " ", text)
             headers.append(text)
 
         # Heuristic to identify the correct table
