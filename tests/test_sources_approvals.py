@@ -10,122 +10,109 @@
 
 from unittest.mock import MagicMock, patch
 
-import polars as pl
 from coreason_etl_pmda.sources_approvals import approvals_source
 
 
-def test_approvals_source() -> None:
-    # Mock request to main page
+def test_approvals_source_scraping() -> None:
+    # HTML with a table containing drug info and a PDF link
     html_content = """
     <html>
         <body>
-            <a href="data_2024.xlsx">2024 Data</a>
-            <a href="data_2023.xls">2023 Data</a>
-            <a href="other.pdf">Guidance</a>
+            <table>
+                <tr>
+                    <th>Approval Date</th>
+                    <th>Brand Name</th>
+                    <th>Generic Name</th>
+                    <th>Applicant</th>
+                    <th>Review Report</th>
+                    <th>Indication</th>
+                </tr>
+                <tr>
+                    <td>2024-01-01</td>
+                    <td>Brand A</td>
+                    <td>Generic A</td>
+                    <td>Pharma A</td>
+                    <td><a href="report_a.pdf">PDF</a></td>
+                    <td>Indication A</td>
+                </tr>
+                <tr>
+                    <td>2024-02-01</td>
+                    <td>Brand B</td>
+                    <td>Generic B</td>
+                    <td>Pharma B</td>
+                    <td>-</td>
+                    <td>Indication B</td>
+                </tr>
+            </table>
         </body>
     </html>
     """
 
-    # Mock DataFrames
-    df_2024 = pl.DataFrame({"id": [1], "name": ["Drug A"]})
-    df_2023 = pl.DataFrame({"id": [2], "name": ["Drug B"]})
+    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.content = html_content.encode("utf-8")
+        mock_resp.raise_for_status.return_value = None
+        mock_get.return_value = mock_resp
 
-    with (
-        patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get,
-        patch("coreason_etl_pmda.sources_approvals.pl.read_excel") as mock_read_excel,
-        patch("dlt.current.source_state", return_value={}),
-    ):
-        # Setup mock responses
-        # First call is main page, subsequent are files
-        def side_effect(url: str) -> MagicMock:
-            resp = MagicMock()
-            resp.raise_for_status.return_value = None
-            if url == "http://example.com/main":
-                resp.content = html_content.encode("utf-8")
-            elif url == "http://example.com/data_2024.xlsx":
-                resp.content = b"excel2024"
-            elif url == "http://example.com/data_2023.xls":
-                resp.content = b"excel2023"
-            else:
-                resp.status_code = 404
-                resp.raise_for_status.side_effect = Exception("404")
-            return resp
-
-        mock_get.side_effect = side_effect
-
-        # Setup read_excel side effect
-        # We need to match the content or just return based on call count/args?
-        # Since we use BytesIO, we can check the bytes content if we want strictness.
-        # But simpler to just return list of DFs.
-        mock_read_excel.side_effect = [df_2024, df_2023]
-
-        resource = approvals_source(url="http://example.com/main")
+        resource = approvals_source(url="http://example.com/approvals")
         data = list(resource)
 
         assert len(data) == 2
-        assert data[0]["name"] == "Drug A"
-        assert data[0]["_source_url"] == "http://example.com/data_2024.xlsx"
-        assert data[1]["name"] == "Drug B"
-        assert data[1]["_source_url"] == "http://example.com/data_2023.xls"
+
+        # Row 1
+        assert data[0]["brand_name_jp"] == "Brand A"
+        assert data[0]["generic_name_jp"] == "Generic A"
+        assert data[0]["approval_date"] == "2024-01-01"
+        assert data[0]["review_report_url"] == "http://example.com/report_a.pdf"
+        assert data[0]["indication"] == "Indication A"
+
+        # Row 2 (No PDF)
+        assert data[1]["brand_name_jp"] == "Brand B"
+        assert data[1]["review_report_url"] is None
+        assert data[1]["indication"] == "Indication B"
 
 
-def test_approvals_source_state() -> None:
-    # Test that visited URLs are skipped
+def test_approvals_source_ignore_irrelevant_tables() -> None:
     html_content = """
     <html>
         <body>
-            <a href="data_2024.xlsx">2024 Data</a>
+            <table>
+                <!-- Table without tr -->
+            </table>
+            <table>
+                 <!-- Table with empty tr -->
+                 <tr></tr>
+            </table>
+            <table>
+                <tr><th>Other</th><th>Data</th></tr>
+                <tr><td>1</td><td>2</td></tr>
+                <tr><td>1</td></tr> <!-- Mismatched cells -->
+            </table>
+            <table>
+                <tr>
+                    <th>Brand Name</th>
+                    <th>Generic Name</th>
+                    <th>Approval Date</th>
+                </tr>
+                <tr>
+                    <td>Brand A</td>
+                    <td>Generic A</td>
+                    <td>2024-01-01</td>
+                </tr>
+                <tr>
+                     <!-- Empty or mismatched row -->
+                     <td>Just One</td>
+                </tr>
+            </table>
         </body>
     </html>
     """
 
-    state = {"visited_urls": {"http://example.com/data_2024.xlsx": True}}
-
-    with (
-        patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get,
-        patch("coreason_etl_pmda.sources_approvals.pl.read_excel") as mock_read_excel,
-        patch("dlt.current.source_state", return_value=state),
-    ):
+    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_get.return_value = mock_resp
 
-        resource = approvals_source(url="http://example.com/main")
-        data = list(resource)
-
-        # Should be empty as it's visited
-        assert len(data) == 0
-        mock_read_excel.assert_not_called()
-
-
-def test_approvals_source_error_handling() -> None:
-    # One file fails, should continue?
-    # Our code catches Exception and prints, so it should continue or finish empty.
-    html_content = """
-    <html>
-        <body>
-            <a href="bad.xlsx">Bad Data</a>
-        </body>
-    </html>
-    """
-
-    with (
-        patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get,
-        patch("coreason_etl_pmda.sources_approvals.pl.read_excel", side_effect=Exception("Corrupt")),
-        patch("dlt.current.source_state", return_value={}),
-    ):
-
-        def side_effect(url: str) -> MagicMock:
-            resp = MagicMock()
-            if url == "http://example.com/main":
-                resp.content = html_content.encode("utf-8")
-            else:
-                resp.content = b"bad"
-            return resp
-
-        mock_get.side_effect = side_effect
-
-        resource = approvals_source(url="http://example.com/main")
-        data = list(resource)
-
-        assert len(data) == 0
+        data = list(approvals_source())
+        assert len(data) == 1
+        assert data[0]["brand_name_jp"] == "Brand A"

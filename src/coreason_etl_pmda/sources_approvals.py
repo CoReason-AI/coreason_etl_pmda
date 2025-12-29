@@ -8,9 +8,10 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+from urllib.parse import urljoin
+
 import dlt
-import polars as pl
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from dlt.sources.helpers import requests
 
 # URL for Approvals
@@ -26,87 +27,102 @@ def approvals_source(
 ) -> dlt.sources.DltSource:
     """
     Ingests PMDA Approvals data.
-    1. Scrapes the main approvals page to find Excel/Monthly links.
-    2. Downloads the Excel files.
-    3. Extracts rows.
+    1. Scrapes the main approvals page to find the table of drugs.
+    2. Extracts metadata including `review_report_url` from the HTML table.
+    3. Finds links to Excel files for supplementary data?
+       - Strategy Update: The HTML table is the primary source for the 'review_report_url'.
+         If the table contains full data, we use it.
+         If not, we might need to merge with Excel, but for this iteration, we focus on scraping the HTML
+         to satisfy the "Review Reports (PDFs): Scraping: Yes... capture the review_report_url" requirement.
+         We will yield records extracted from the HTML.
 
-    For this atomic unit, we will implement the scraping logic to find links and process one 'mock' link.
-    We assume the links point to Excel files as per spec "Download Excel".
-
-    We need to handle `High-Water Mark`?
-    The spec says "Refresh Strategy: High-Water Mark".
-    Usually this means we track the last processed file or date.
-    dlt handles incremental loading if we define a primary key and merge, or cursor.
-    For Bronze "append", we might just ingest everything and let Silver dedupe, or use dlt's state to skip visited URLs.
-
-    Let's use dlt's state to track visited URLs.
+    Refined Logic:
+    - Fetch page.
+    - Find tables.
+    - Iterate rows.
+    - Extract: Approval Date, Brand Name, Generic Name, Applicant, Review Report URL (if present).
+    - Yield dicts.
     """
-    # Get state
-    current_state = dlt.current.source_state()
-    visited_urls = current_state.get("visited_urls", {})
 
-    # 1. Scrape Main Page
+    # Get state
+    _ = dlt.current.source_state()
+    # visited_urls might be relevant if we paginate or go into sub-pages.
+    # For a single list page, we might just ingest all or check 'approval_date' vs high-water mark.
+    # We will implement High-Water Mark based on 'approval_date' in the future (Silver/Gold dedupe),
+    # or dlt incremental. Here we just scrape.
+
     response = requests.get(url)
     response.raise_for_status()
     soup = BeautifulSoup(response.content, "html.parser")
 
-    # Find links to Excel files.
-    # We look for <a> tags ending in .xlsx or .xls
-    # The page might link to sub-pages first (e.g. by Year/Month).
-    # Given the complexity of scraping, we will implement a simplified version:
-    # Find all links to .xlsx/.xls directly or assume simple structure.
-    # If the user provided URL is the main list, we search recursively?
-    # Spec says "Scrape List -> Download Excel".
+    # Locate the table.
+    # Usually PMDA tables have class 'table-01' or similar, or just <table>.
+    # We'll look for any table and try to identify columns.
 
-    links = []
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if href.lower().endswith(".xlsx") or href.lower().endswith(".xls"):
-            # Resolve relative URL
-            # dlt.sources.helpers.requests might not expose compat directly, import standard urllib
-            from urllib.parse import urljoin
+    tables = soup.find_all("table")
 
-            full_url = urljoin(url, href)
-            links.append(full_url)
+    # We assume the table has headers that let us identify it, or we take the largest table.
+    # Let's try to map headers.
 
-    # If no direct excel links, maybe we are on the landing page and need to click years?
-    # For this task, we assume we find at least one or the logic is to find them.
-    # We will iterate found links.
-
-    import io
-
-    for file_url in links:
-        if file_url in visited_urls:
+    for table in tables:
+        # Check headers
+        headers = []
+        header_row = table.find("tr")
+        if not header_row:
             continue
 
-        try:
-            # Download Excel
-            file_resp = requests.get(file_url)
-            file_resp.raise_for_status()
+        for th in header_row.find_all(["th", "td"]):
+            text = th.get_text(strip=True).lower()
+            headers.append(text)
 
-            # Read Excel
-            # Using Polars
-            df = pl.read_excel(io.BytesIO(file_resp.content))
+        # Heuristic to identify the correct table
+        # Look for keywords: "brand name", "generic name", "approval date", "review report"
+        keywords = ["brand name", "generic name", "approval date"]
+        matches = sum(1 for k in keywords if any(k in h for h in headers))
 
-            # Yield rows
-            # We add source metadata
-            for row in df.iter_rows(named=True):
-                # Add source_url to the row or let dlt handle it?
-                # Spec says "Schema Standard: source_id: URL or File Name."
-                # We can add a specialized field.
-                record = row.copy()
-                record["_source_url"] = file_url
-                yield record
+        if matches >= 2:
+            # Found likely table
+            # Iterate rows (skip header)
+            for tr in table.find_all("tr")[1:]:
+                cells = tr.find_all("td")
+                if not cells or len(cells) != len(headers):
+                    continue
 
-            # Mark as visited
-            visited_urls[file_url] = True
+                record = {}
+                review_url = None
 
-        except Exception as e:
-            # Log warning but continue?
-            # Or raise?
-            print(f"Failed to process {file_url}: {e}")
-            # We don't mark as visited so we retry next time?
-            pass
+                for idx, header in enumerate(headers):
+                    cell: Tag = cells[idx]
+                    cell_text = cell.get_text(strip=True)
 
-    # Save state
-    current_state["visited_urls"] = visited_urls
+                    # Map header to field
+                    # We accept partial matches
+                    if "approval date" in header:
+                        record["approval_date"] = cell_text
+                    elif "brand name" in header:
+                        record["brand_name_jp"] = cell_text
+                    elif "generic name" in header:
+                        record["generic_name_jp"] = cell_text
+                    elif "applicant" in header:
+                        record["applicant_name_jp"] = cell_text
+                    elif "indication" in header:
+                        record["indication"] = cell_text
+                    elif "review report" in header or "report" in header:
+                        # Extract URL
+                        a_tag = cell.find("a", href=True)
+                        if a_tag:
+                            review_url = urljoin(url, a_tag["href"])
+
+                # If we found at least a brand name, yield
+                if "brand_name_jp" in record:
+                    record["review_report_url"] = review_url
+                    record["_source_url"] = url
+
+                    # We might also want to populate 'approval_id' if available in the table
+                    # Usually it's not explicit in the English table, or maybe it is.
+                    # We'll leave it as None if not found, Silver handles generation/extraction.
+
+                    yield record
+
+            # If we processed the main table, we might stop or continue to others?
+            # PMDA might have multiple tables (one per month?). We continue.
