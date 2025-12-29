@@ -50,3 +50,9 @@ def test_convert_japanese_date_invalid() -> None:
     assert convert_japanese_date_to_iso("Invalid") is None
     assert convert_japanese_date_to_iso("Reiwa 99.99.99") is None  # Invalid date
     assert convert_japanese_date_to_iso("") is None
+
+
+def test_convert_japanese_date_idempotency() -> None:
+    # Test that ISO dates are returned as is
+    assert convert_japanese_date_to_iso("2020-05-01") == "2020-05-01"
+    assert convert_japanese_date_to_iso("2019-12-31") == "2019-12-31"

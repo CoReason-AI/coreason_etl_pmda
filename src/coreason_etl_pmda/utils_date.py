@@ -46,6 +46,11 @@ def convert_japanese_date_to_iso(date_str: str) -> str | None:
     # Normalization for parsing (strip whitespace)
     clean_str = date_str.strip()
 
+    # Idempotency check: If already ISO YYYY-MM-DD, return as is.
+    # Strict check for YYYY-MM-DD
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", clean_str):
+        return clean_str
+
     # Regex for "Era Year Month Day" pattern
     # Supports:
     # - Reiwa 2
