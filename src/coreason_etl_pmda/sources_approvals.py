@@ -8,105 +8,99 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+import re
+from urllib.parse import urljoin
+
 import dlt
-import polars as pl
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from dlt.sources.helpers import requests
 
-# URL for Approvals
-# Approvals: https://www.pmda.go.jp/english/review-services/reviews/approved-information/drugs/0001.html
-# This page likely contains links to monthly lists (Excel or PDF) or tables.
-# The spec says: "Approvals: Scrape List -> Download Excel -> Load rows."
-# High-Water Mark refresh strategy.
+# URL for Approvals (Japanese)
+# Likely: https://www.pmda.go.jp/review-services/drug-reviews/review-information/p-drugs/0001.html
+# We target the Japanese site to ensure we get `brand_name_jp` and `generic_name_jp` for the JAN Bridge.
 
 
 @dlt.resource(name="bronze_approvals", write_disposition="append")  # type: ignore[misc]
 def approvals_source(
-    url: str = "https://www.pmda.go.jp/english/review-services/reviews/approved-information/drugs/0001.html",
+    url: str = "https://www.pmda.go.jp/review-services/drug-reviews/review-information/p-drugs/0001.html",
 ) -> dlt.sources.DltSource:
     """
-    Ingests PMDA Approvals data.
-    1. Scrapes the main approvals page to find Excel/Monthly links.
-    2. Downloads the Excel files.
-    3. Extracts rows.
+    Ingests PMDA Approvals data (Japanese Source).
+    1. Scrapes the Japanese approvals page to find the table of drugs.
+    2. Extracts metadata including `review_report_url` (審査報告書) from the HTML table.
 
-    For this atomic unit, we will implement the scraping logic to find links and process one 'mock' link.
-    We assume the links point to Excel files as per spec "Download Excel".
-
-    We need to handle `High-Water Mark`?
-    The spec says "Refresh Strategy: High-Water Mark".
-    Usually this means we track the last processed file or date.
-    dlt handles incremental loading if we define a primary key and merge, or cursor.
-    For Bronze "append", we might just ingest everything and let Silver dedupe, or use dlt's state to skip visited URLs.
-
-    Let's use dlt's state to track visited URLs.
+    Refined Logic:
+    - Fetch page (handling Shift-JIS or UTF-8).
+    - Find tables.
+    - Match headers using Japanese keywords.
+    - Extract: 承認年月日 (Approval Date), 販売名 (Brand Name), 一般的名称 (Generic Name), 申請者氏名 (Applicant).
+    - Yield dicts.
     """
-    # Get state
-    current_state = dlt.current.source_state()
-    visited_urls = current_state.get("visited_urls", {})
 
-    # 1. Scrape Main Page
+    # Get state
+    _ = dlt.current.source_state()
+
     response = requests.get(url)
     response.raise_for_status()
+    # PMDA often uses CP932/Shift-JIS, requests might autodetect or we force it if needed.
+    # We'll rely on response.encoding or BeautifulSoup's detection.
     soup = BeautifulSoup(response.content, "html.parser")
 
-    # Find links to Excel files.
-    # We look for <a> tags ending in .xlsx or .xls
-    # The page might link to sub-pages first (e.g. by Year/Month).
-    # Given the complexity of scraping, we will implement a simplified version:
-    # Find all links to .xlsx/.xls directly or assume simple structure.
-    # If the user provided URL is the main list, we search recursively?
-    # Spec says "Scrape List -> Download Excel".
+    tables = soup.find_all("table")
 
-    links = []
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if href.lower().endswith(".xlsx") or href.lower().endswith(".xls"):
-            # Resolve relative URL
-            # dlt.sources.helpers.requests might not expose compat directly, import standard urllib
-            from urllib.parse import urljoin
-
-            full_url = urljoin(url, href)
-            links.append(full_url)
-
-    # If no direct excel links, maybe we are on the landing page and need to click years?
-    # For this task, we assume we find at least one or the logic is to find them.
-    # We will iterate found links.
-
-    import io
-
-    for file_url in links:
-        if file_url in visited_urls:
+    for table in tables:
+        # Check headers
+        headers = []
+        header_row = table.find("tr")
+        if not header_row:
             continue
 
-        try:
-            # Download Excel
-            file_resp = requests.get(file_url)
-            file_resp.raise_for_status()
+        for th in header_row.find_all(["th", "td"]):
+            text = th.get_text(strip=True)
+            # Normalize whitespace
+            text = re.sub(r"\s+", "", text)  # Japanese text usually doesn't need spaces for keyword matching
+            headers.append(text)
 
-            # Read Excel
-            # Using Polars
-            df = pl.read_excel(io.BytesIO(file_resp.content))
+        # Heuristic to identify the correct table using Japanese keywords
+        # Common headers: 承認年月日, 販売名, 一般的名称, 申請者氏名, 審査報告書
+        keywords = ["販売名", "一般的名称", "承認年月日"]
+        matches = sum(1 for k in keywords if any(k in h for h in headers))
 
-            # Yield rows
-            # We add source metadata
-            for row in df.iter_rows(named=True):
-                # Add source_url to the row or let dlt handle it?
-                # Spec says "Schema Standard: source_id: URL or File Name."
-                # We can add a specialized field.
-                record = row.copy()
-                record["_source_url"] = file_url
-                yield record
+        if matches >= 2:
+            # Found likely table
+            for tr in table.find_all("tr")[1:]:
+                cells = tr.find_all("td")
+                if not cells or len(cells) != len(headers):
+                    continue
 
-            # Mark as visited
-            visited_urls[file_url] = True
+                record = {}
+                review_url = None
 
-        except Exception as e:
-            # Log warning but continue?
-            # Or raise?
-            print(f"Failed to process {file_url}: {e}")
-            # We don't mark as visited so we retry next time?
-            pass
+                for idx, header in enumerate(headers):
+                    cell: Tag = cells[idx]
+                    cell_text = cell.get_text(strip=True)
 
-    # Save state
-    current_state["visited_urls"] = visited_urls
+                    # Map header to field (Japanese)
+                    if "承認年月日" in header:
+                        record["approval_date"] = cell_text
+                    elif "販売名" in header:
+                        record["brand_name_jp"] = cell_text
+                    elif "一般的名称" in header:
+                        record["generic_name_jp"] = cell_text
+                    elif "申請者氏名" in header:
+                        record["applicant_name_jp"] = cell_text
+                    elif "薬効" in header:  # 薬効分類名 (Indication class)
+                        record["indication"] = cell_text
+                    elif "報告書" in header or "概要" in header:  # 審査報告書 / 審査概要
+                        # Extract URL
+                        a_tag = cell.find("a", href=True)
+                        if a_tag:
+                            # Usually there are multiple links (Part 1, Part 2).
+                            # We take the first one or a list?
+                            # Spec says "review_report_url" (singular). We take the first.
+                            review_url = urljoin(url, a_tag["href"])
+
+                if "brand_name_jp" in record:
+                    record["review_report_url"] = review_url
+                    record["_source_url"] = url
+                    yield record
