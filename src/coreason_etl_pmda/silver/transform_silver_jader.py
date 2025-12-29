@@ -8,6 +8,8 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+import re
+
 import polars as pl
 
 from coreason_etl_pmda.utils_text import normalize_text
@@ -37,8 +39,6 @@ CHARACTERIZATION_MAPPING = {
     "併用薬": "Concomitant",
 }
 
-
-import re
 
 def _normalize_common(df: pl.DataFrame, mapping: dict[str, str]) -> pl.DataFrame:
     """
