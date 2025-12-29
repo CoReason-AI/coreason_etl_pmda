@@ -12,7 +12,6 @@ from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
-
 from coreason_etl_pmda.sources_jan import jan_inn_source
 
 

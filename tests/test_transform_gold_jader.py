@@ -10,7 +10,6 @@
 
 import polars as pl
 import pytest
-
 from coreason_etl_pmda.transform_gold_jader import transform_jader_gold
 
 
