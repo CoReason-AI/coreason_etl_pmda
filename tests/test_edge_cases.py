@@ -121,3 +121,43 @@ def test_approvals_gold_id_stability() -> None:
     )
     res3 = transform_approvals_gold(df3)
     assert res1["coreason_id"][0] != res3["coreason_id"][0]
+
+
+def test_jader_duplicates() -> None:
+    """Verify behavior when duplicate source rows exist."""
+    # Demo has 1 case.
+    # Drug has 2 IDENTICAL rows for same drug (Suspected).
+    # Reac has 1 row.
+    # Expect: 2 rows in output (Cartesian product of joins), unless de-duped.
+    # Current implementation is simple joins, so it should produce duplicates.
+    demo = pl.DataFrame({"id": ["1"], "sex": ["M"], "age": ["20"], "reporting_year": [2020]})
+    drug = pl.DataFrame({"id": ["1", "1"], "drug_name": ["D1", "D1"], "characterization": ["Suspected", "Suspected"]})
+    reac = pl.DataFrame({"id": ["1"], "reaction": ["R1"]})
+
+    result = transform_jader_gold(demo, drug, reac)
+    # The logic is join demo->drug->reac.
+    # 1 demo -> 2 drugs -> 2 rows.
+    # 2 rows -> 1 reac -> 2 rows.
+    assert len(result) == 2
+    # Verify contents are identical
+    assert result.row(0) == result.row(1)
+
+
+def test_date_normalization_numeric_gannen() -> None:
+    """Verify 'Reiwa 1' is treated as Gannen (Year 1)."""
+    # Reiwa started 2019.
+    # Reiwa 1 -> 2019.
+    # Reiwa 2 -> 2020.
+    assert convert_japanese_date_to_iso("Reiwa 1.5.1") == "2019-05-01"
+    assert convert_japanese_date_to_iso("Reiwa 2.5.1") == "2020-05-01"
+
+
+def test_jader_join_key_whitespace() -> None:
+    """Verify join failure on mismatched whitespace in IDs."""
+    demo = pl.DataFrame({"id": ["1 "]})  # Trailing space
+    drug = pl.DataFrame({"id": ["1"], "drug_name": ["D1"], "characterization": ["Suspected"]})
+    reac = pl.DataFrame({"id": ["1"], "reaction": ["R1"]})
+
+    # Join on 'id'. Polars is strict.
+    result = transform_jader_gold(demo, drug, reac)
+    assert len(result) == 0
