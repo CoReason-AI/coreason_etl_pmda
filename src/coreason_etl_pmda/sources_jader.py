@@ -55,6 +55,7 @@ def jader_source(
     """
 
     # 1. Scrape
+    logger.info(f"Scraping JADER snapshot links from {url}")
     response = requests.get(url)
     response.raise_for_status()
     soup = BeautifulSoup(response.content, "html.parser")
@@ -70,8 +71,10 @@ def jader_source(
             zip_links.append(urljoin(url, href))
 
     # Process each zip
+    logger.info(f"Found {len(zip_links)} JADER zip files")
     for zip_url in zip_links:
         try:
+            logger.info(f"Processing JADER zip: {zip_url}")
             resp = requests.get(zip_url)
             resp.raise_for_status()
 

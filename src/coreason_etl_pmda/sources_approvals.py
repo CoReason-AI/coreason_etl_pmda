@@ -15,6 +15,8 @@ import dlt
 from bs4 import BeautifulSoup, Tag
 from dlt.sources.helpers import requests
 
+from coreason_etl_pmda.utils_logger import logger
+
 # URL for Approvals (Japanese)
 # Likely: https://www.pmda.go.jp/review-services/drug-reviews/review-information/p-drugs/0001.html
 # We target the Japanese site to ensure we get `brand_name_jp` and `generic_name_jp` for the JAN Bridge.
@@ -40,6 +42,7 @@ def approvals_source(
     # Get state
     _ = dlt.current.source_state()
 
+    logger.info(f"Scraping Approvals from {url}")
     response = requests.get(url)
     response.raise_for_status()
     # PMDA often uses CP932/Shift-JIS, requests might autodetect or we force it if needed.
@@ -68,6 +71,7 @@ def approvals_source(
 
         if matches >= 2:
             # Found likely table
+            logger.info(f"Found approval table with headers: {headers}")
             for tr in table.find_all("tr")[1:]:
                 cells = tr.find_all("td")
                 if not cells or len(cells) != len(headers):
