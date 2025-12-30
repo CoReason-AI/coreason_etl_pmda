@@ -17,6 +17,8 @@ import polars as pl
 from bs4 import BeautifulSoup
 from dlt.sources.helpers import requests
 
+from coreason_etl_pmda.utils_logger import logger
+
 # URL for JADER
 # JADER: https://www.pmda.go.jp/safety/info-services/drugs/adr-info/suspected-adr/0008.html
 # "Snapshot" refresh strategy. "Download Zip -> Extract CSVs".
@@ -112,6 +114,6 @@ def jader_source(
                                 record["_source_zip"] = zip_url
                                 yield dlt.mark.with_table_name(record, table_name)
 
-        except Exception as e:
-            print(f"Failed to process {zip_url}: {e}")
+        except Exception:
+            logger.exception("Failed to process {}", zip_url)
             pass
