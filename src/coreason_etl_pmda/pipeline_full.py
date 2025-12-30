@@ -148,28 +148,40 @@ class PipelineOrchestrator:
         self.con.execute("CREATE SCHEMA IF NOT EXISTS pmda_gold")
 
         # 1. Approvals
+        silver_approvals = None
         try:
             silver_approvals = self.con.sql("SELECT * FROM pmda_silver.silver_approvals").pl()
-            if not silver_approvals.is_empty():
-                gold_approvals = transform_approvals_gold(silver_approvals)
-                self._write_table("pmda_gold.pmda_approvals", gold_approvals)
         except duckdb.Error:
             logger.warning("Silver Approvals not found. Skipping Gold Approvals.")
 
+        if silver_approvals is not None and not silver_approvals.is_empty():
+            gold_approvals = transform_approvals_gold(silver_approvals)
+            self._write_table("pmda_gold.pmda_approvals", gold_approvals)
+
         # 2. JADER (Reconstruction)
+        demo = None
+        drug = None
+        reac = None
+
         try:
             demo = self.con.sql("SELECT * FROM pmda_silver.silver_jader_demo").pl()
             drug = self.con.sql("SELECT * FROM pmda_silver.silver_jader_drug").pl()
             reac = self.con.sql("SELECT * FROM pmda_silver.silver_jader_reac").pl()
-
-            if not demo.is_empty() and not drug.is_empty() and not reac.is_empty():
-                gold_jader = transform_jader_gold(demo, drug, reac)
-                self._write_table("pmda_gold.pmda_adverse_events", gold_jader)
-            else:
-                logger.warning("One or more Silver JADER tables empty. Skipping Gold JADER.")
-
         except duckdb.Error:
-            logger.warning("Silver JADER tables not found. Skipping Gold JADER.")
+             logger.warning("Silver JADER tables not found. Skipping Gold JADER.")
+
+        if (
+            demo is not None
+            and not demo.is_empty()
+            and drug is not None
+            and not drug.is_empty()
+            and reac is not None
+            and not reac.is_empty()
+        ):
+            gold_jader = transform_jader_gold(demo, drug, reac)
+            self._write_table("pmda_gold.pmda_adverse_events", gold_jader)
+        elif demo is not None: # Means tables existed but were empty
+            logger.warning("One or more Silver JADER tables empty. Skipping Gold JADER.")
 
         logger.info("Gold Layer Complete.")
 
