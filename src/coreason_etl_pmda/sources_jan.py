@@ -93,10 +93,39 @@ def jan_inn_source(url: str = "https://www.nihs.go.jp/drug/jan_data_e.html") -> 
     # "Ingestion Logic: ... Load rows." and "Target Schema: bronze_ref_jan_inn (jan_name_jp, jan_name_en, inn_name_en)."
     # This suggests we should normalize headers here to match the target schema.
 
-    # Let's standardize headers if possible, or yield as is.
-    # Given the column names are likely Japanese in source, we should map them if we know them.
-    # Since we don't have the file, we will yield the rows as dicts.
-    # We will assume the file has headers.
+    # Normalize Headers
+    # Mapping assumed from standard Japanese JAN files
+    # Target: jan_name_jp, jan_name_en, inn_name_en
+    header_mapping = {
+        "JAN（日本名）": "jan_name_jp",
+        "JAN(日本名)": "jan_name_jp",  # Handle full/half width variations
+        "JAN（英名）": "jan_name_en",
+        "JAN(英名)": "jan_name_en",
+        "INN": "inn_name_en",
+    }
 
+    # Rename columns
+    # We look for partial matches or exact matches?
+    # Polars rename requires exact matches for existing columns.
+    rename_dict = {}
+    for col in df.columns:
+        # Normalize whitespace
+        clean_col = col.strip()
+        if clean_col in header_mapping:
+            rename_dict[col] = header_mapping[clean_col]
+
+    df = df.rename(rename_dict)
+
+    # Select only target columns if they exist, or keep all?
+    # Spec "Target Schema: bronze_ref_jan_inn (jan_name_jp, jan_name_en, inn_name_en)"
+    # We should ensure these exist.
+
+    # If columns are missing, we might yield what we have, but Silver expects jan_name_jp.
+    # Let's verify jan_name_jp exists.
+    if "jan_name_jp" not in df.columns:
+        logger.warning(f"jan_name_jp not found in JAN source. Columns: {df.columns}")
+        # We continue, but downstream might fail or skip.
+
+    # We yield all columns but the renamed ones are now compliant.
     for row in df.iter_rows(named=True):
         yield row
