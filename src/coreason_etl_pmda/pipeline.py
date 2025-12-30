@@ -13,6 +13,7 @@ import dlt
 from coreason_etl_pmda.sources_approvals import approvals_source
 from coreason_etl_pmda.sources_jader import jader_source
 from coreason_etl_pmda.sources_jan import jan_inn_source
+from coreason_etl_pmda.utils_logger import logger
 
 # Note: Silver/Gold transformations are usually done via dlt transformer or DBT.
 # Since we used Polars for transformations in the spec (mandatory for JADER CSV velocity),
@@ -33,6 +34,7 @@ from coreason_etl_pmda.sources_jan import jan_inn_source
 # I will define the Bronze Ingestion Pipeline here.
 
 
+@logger.catch  # type: ignore[misc]
 def run_bronze_pipeline(destination: str = "duckdb", dataset_name: str = "pmda_bronze") -> dlt.Pipeline:
     """
     Runs the Bronze Layer Ingestion.
@@ -48,7 +50,7 @@ def run_bronze_pipeline(destination: str = "duckdb", dataset_name: str = "pmda_b
     sources = [jan_inn_source(), approvals_source(), jader_source()]
 
     info = p.run(sources)
-    print(info)
+    logger.info(info)
     return info
 
 

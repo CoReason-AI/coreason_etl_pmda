@@ -48,8 +48,27 @@ This project uses **Ruff** for Python linting/formatting, **Mypy** for typing, a
   * Strict static typing is encouraged.
   * Run checks with: poetry run mypy .
   * Avoid Any wherever possible.
-* **Logging:** Use loguru instead of the standard logging module.
-  * *Good:* from loguru import logger -> logger.info("...")
+* **Logging & Observability:**
+  * **Standard:** Use `loguru` exclusively. Do not use `logging` or `print()`.
+  * **Configuration:** The logger is pre-configured in `src/coreason_etl_pmda/utils_logger.py`.
+  * **Outputs:**
+    * **Console:** Human-readable text format (colorized).
+    * **File:** `logs/app.log` (JSON format, rotated every 500 MB, retained for 10 days).
+  * **Usage Example:**
+    ```python
+    from coreason_etl_pmda.utils_logger import logger
+
+    # Inside an Agent or Function
+    logger.info("Agent started task")
+    try:
+        # ... logic ...
+        logger.debug("Processing data...")
+    except Exception:
+        logger.exception("Agent failed")
+    ```
+  * **Best Practices:**
+    * Use `@logger.catch` on main execution entries (e.g., `run()`, `execute()`).
+    * Bind context where useful: `logger.bind(task_id=123).info("Processing")`.
 * **Licensing:** Every .py file must start with the standard license header.
 
 ### **Legal & Intellectual Property**
