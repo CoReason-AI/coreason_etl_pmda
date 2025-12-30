@@ -12,6 +12,8 @@ import dlt
 import polars as pl
 from dlt.sources.helpers import requests
 
+from coreason_etl_pmda.utils_logger import logger
+
 # URL for JAN/INN data
 # JAN/INN: https://www.nihs.go.jp/drug/jan_data_e.html
 # The actual file is an Excel/CSV linked from there.
@@ -49,6 +51,7 @@ def jan_inn_source(url: str = "https://www.nihs.go.jp/drug/jan_data_e.html") -> 
     """
     # Download the content
     # In tests we will mock requests.get
+    logger.info(f"Downloading JAN/INN data from {url}")
     response = requests.get(url)
     response.raise_for_status()
 

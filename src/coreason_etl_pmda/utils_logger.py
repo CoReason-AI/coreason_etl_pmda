@@ -31,7 +31,7 @@ logger.add(
 
 # Sink 2: File
 # Rotating file: logs/app.log
-# Rotation: 500 MB
+# Rotation: 500 MB (or 1 day per spec)
 # Retention: 10 days
 # Serialization: JSON
 # Enqueue: Async safe
