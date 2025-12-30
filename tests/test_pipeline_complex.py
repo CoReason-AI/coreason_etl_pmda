@@ -49,16 +49,19 @@ def test_pipeline_idempotency(tmp_path: Path, mock_dlt_pipeline: MagicMock) -> N
 
     # Minimal JADER
     con.execute(
-        "CREATE TABLE pmda_bronze.bronze_jader_demo AS SELECT 'C1' as 識別番号, 'M' as 性別, '50' as 年齢, '2020' as 報告年度"
+        "CREATE TABLE pmda_bronze.bronze_jader_demo "
+        "AS SELECT 'C1' as 識別番号, 'M' as 性別, '50' as 年齢, '2020' as 報告年度"
     )
     con.execute(
-        "CREATE TABLE pmda_bronze.bronze_jader_drug AS SELECT 'C1' as 識別番号, 'Drug A' as \"医薬品（一般名）\", '被疑薬' as 被疑薬等区分"
+        "CREATE TABLE pmda_bronze.bronze_jader_drug "
+        "AS SELECT 'C1' as 識別番号, 'Drug A' as \"医薬品（一般名）\", '被疑薬' as 被疑薬等区分"
     )
     con.execute("CREATE TABLE pmda_bronze.bronze_jader_reac AS SELECT 'C1' as 識別番号, 'Reaction X' as 有害事象")
 
     # Minimal JAN
     con.execute(
-        "CREATE TABLE pmda_bronze.bronze_ref_jan_inn AS SELECT 'Generic A' as jan_name_jp, 'Generic A (EN)' as jan_name_en, 'Generic A (INN)' as inn_name_en"
+        "CREATE TABLE pmda_bronze.bronze_ref_jan_inn "
+        "AS SELECT 'Generic A' as jan_name_jp, 'Generic A (EN)' as jan_name_en, 'Generic A (INN)' as inn_name_en"
     )
     con.close()
 
@@ -106,7 +109,8 @@ def test_pipeline_schema_evolution(tmp_path: Path, mock_dlt_pipeline: MagicMock)
 
     # Bronze JAN (Standard)
     con.execute(
-        "CREATE TABLE pmda_bronze.bronze_ref_jan_inn AS SELECT 'Generic B' as jan_name_jp, 'Gen B' as jan_name_en, 'Gen B' as inn_name_en"
+        "CREATE TABLE pmda_bronze.bronze_ref_jan_inn "
+        "AS SELECT 'Generic B' as jan_name_jp, 'Gen B' as jan_name_en, 'Gen B' as inn_name_en"
     )
 
     # Empty JADER to skip that part
@@ -149,7 +153,8 @@ def test_pipeline_jader_end_to_end_complex(tmp_path: Path, mock_dlt_pipeline: Ma
 
     # Demo
     con.execute(
-        "CREATE TABLE pmda_bronze.bronze_jader_demo AS SELECT ' C1 ' as \"識別 番号\", ' M ' as 性別, '50' as 年齢, '2020' as 報告年度"
+        "CREATE TABLE pmda_bronze.bronze_jader_demo "
+        "AS SELECT ' C1 ' as \"識別 番号\", ' M ' as 性別, '50' as 年齢, '2020' as 報告年度"
     )
 
     # Drug: 1 Suspected (Messy), 1 Concomitant
@@ -167,7 +172,8 @@ def test_pipeline_jader_end_to_end_complex(tmp_path: Path, mock_dlt_pipeline: Ma
 
     # Reac
     con.execute(
-        "CREATE TABLE pmda_bronze.bronze_jader_reac AS SELECT ' C1 ' as \"識別 番号\", 'Reaction Z' as 有害事象"
+        "CREATE TABLE pmda_bronze.bronze_jader_reac "
+        "AS SELECT ' C1 ' as \"識別 番号\", 'Reaction Z' as 有害事象"
     )
 
     # Empty Approvals/JAN
