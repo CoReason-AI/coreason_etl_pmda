@@ -18,6 +18,7 @@ openpyxl = "^3.1.5"
 xlsx2csv = "^0.8.4"
 beautifulsoup4 = "^4.14.3"
 lxml = "^6.0.2"
+pyarrow = "^22.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.2"
