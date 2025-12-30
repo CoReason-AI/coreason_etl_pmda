@@ -205,7 +205,9 @@ def test_jader_missing_optional_columns() -> None:
 def test_jader_null_ids() -> None:
     """Verify behavior with Null IDs (should not join)."""
     demo = pl.DataFrame({"id": [None, "1"]})
-    drug = pl.DataFrame({"id": [None, "1"], "drug_name": ["D_Null", "D1"], "characterization": ["Suspected", "Suspected"]})
+    drug = pl.DataFrame(
+        {"id": [None, "1"], "drug_name": ["D_Null", "D1"], "characterization": ["Suspected", "Suspected"]}
+    )
     reac = pl.DataFrame({"id": [None, "1"], "reaction": ["R_Null", "R1"]})
 
     result = transform_jader_gold(demo, drug, reac)
