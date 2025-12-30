@@ -121,8 +121,7 @@ def test_pipeline_missing_jan_data(tmp_path: Path, mock_dlt_pipeline: MagicMock)
 
     # JAN empty
     con.execute(
-        "CREATE TABLE pmda_bronze.bronze_ref_jan_inn "
-        "(jan_name_jp VARCHAR, jan_name_en VARCHAR, inn_name_en VARCHAR)"
+        "CREATE TABLE pmda_bronze.bronze_ref_jan_inn " "(jan_name_jp VARCHAR, jan_name_en VARCHAR, inn_name_en VARCHAR)"
     )
 
     con.close()
@@ -150,8 +149,7 @@ def test_pipeline_ai_fallback(tmp_path: Path, mock_dlt_pipeline: MagicMock) -> N
     )
     con.execute("INSERT INTO pmda_bronze.bronze_approvals VALUES ('1', 'R2.1.1', 'Brand', 'Generic', 'App')")
     con.execute(
-        "CREATE TABLE pmda_bronze.bronze_ref_jan_inn "
-        "(jan_name_jp VARCHAR, jan_name_en VARCHAR, inn_name_en VARCHAR)"
+        "CREATE TABLE pmda_bronze.bronze_ref_jan_inn " "(jan_name_jp VARCHAR, jan_name_en VARCHAR, inn_name_en VARCHAR)"
     )
     con.close()
 
@@ -177,8 +175,7 @@ def test_pipeline_partial_jader(tmp_path: Path, mock_dlt_pipeline: MagicMock) ->
     con.execute("CREATE SCHEMA pmda_bronze")
     # Only Demo
     con.execute(
-        "CREATE TABLE pmda_bronze.bronze_jader_demo "
-        "(識別番号 VARCHAR, 性別 VARCHAR, 年齢 VARCHAR, 報告年度 VARCHAR)"
+        "CREATE TABLE pmda_bronze.bronze_jader_demo " "(識別番号 VARCHAR, 性別 VARCHAR, 年齢 VARCHAR, 報告年度 VARCHAR)"
     )
     con.execute("INSERT INTO pmda_bronze.bronze_jader_demo VALUES ('C1', 'M', '50', '2020')")
 
@@ -209,9 +206,7 @@ def test_pipeline_partial_jader(tmp_path: Path, mock_dlt_pipeline: MagicMock) ->
 
     # Should skip Gold JADER (and log warning)
     con = duckdb.connect(str(db_path))
-    tables = con.execute(
-        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'pmda_gold'"
-    ).fetchall()
+    tables = con.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'pmda_gold'").fetchall()
     table_names = [t[0] for t in tables]
     assert "pmda_adverse_events" not in table_names
     con.close()
@@ -286,8 +281,7 @@ def test_pipeline_bronze_empty_table(tmp_path: Path) -> None:
         "(承認番号 VARCHAR, 承認年月日 VARCHAR, 販売名 VARCHAR, 一般的名称 VARCHAR, 申請者氏名 VARCHAR)"
     )
     con.execute(
-        "CREATE TABLE pmda_bronze.bronze_ref_jan_inn "
-        "(jan_name_jp VARCHAR, jan_name_en VARCHAR, inn_name_en VARCHAR)"
+        "CREATE TABLE pmda_bronze.bronze_ref_jan_inn " "(jan_name_jp VARCHAR, jan_name_en VARCHAR, inn_name_en VARCHAR)"
     )
     con.close()
 
