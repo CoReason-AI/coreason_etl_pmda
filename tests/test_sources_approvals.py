@@ -51,6 +51,7 @@ def test_approvals_source_scraping_japanese() -> None:
     with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
+        mock_resp.encoding = "utf-8"
         mock_resp.raise_for_status.return_value = None
         mock_get.return_value = mock_resp
 
@@ -59,16 +60,26 @@ def test_approvals_source_scraping_japanese() -> None:
 
         assert len(data) == 2
 
+        # Verify Envelope
+        for row in data:
+            assert "source_id" in row
+            assert row["source_id"] == "http://example.com/jp"
+            assert "ingestion_ts" in row
+            assert "raw_payload" in row
+            assert row["original_encoding"] == "utf-8"
+
         # Row 1
-        assert data[0]["brand_name_jp"] == "ブランドA"
-        assert data[0]["generic_name_jp"] == "ジェネリックA"
-        assert data[0]["approval_date"] == "令和2年1月1日"
-        assert data[0]["review_report_url"] == "http://example.com/report_a.pdf"
-        assert data[0]["indication"] == "効能A"
+        payload1 = data[0]["raw_payload"]
+        assert payload1["brand_name_jp"] == "ブランドA"
+        assert payload1["generic_name_jp"] == "ジェネリックA"
+        assert payload1["approval_date"] == "令和2年1月1日"
+        assert payload1["review_report_url"] == "http://example.com/report_a.pdf"
+        assert payload1["indication"] == "効能A"
 
         # Row 2
-        assert data[1]["brand_name_jp"] == "ブランドB"
-        assert data[1]["review_report_url"] is None
+        payload2 = data[1]["raw_payload"]
+        assert payload2["brand_name_jp"] == "ブランドB"
+        assert payload2["review_report_url"] is None
 
 
 def test_approvals_source_whitespace_japanese() -> None:
@@ -94,11 +105,13 @@ def test_approvals_source_whitespace_japanese() -> None:
     with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
+        mock_resp.encoding = "utf-8"
         mock_get.return_value = mock_resp
 
         data = list(approvals_source())
         assert len(data) == 1
-        assert data[0]["brand_name_jp"] == "Name"
+        payload = data[0]["raw_payload"]
+        assert payload["brand_name_jp"] == "Name"
 
 
 def test_approvals_source_multiple_tables_japanese() -> None:
@@ -122,12 +135,15 @@ def test_approvals_source_multiple_tables_japanese() -> None:
     with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
+        mock_resp.encoding = "utf-8"
         mock_get.return_value = mock_resp
 
         data = list(approvals_source())
         assert len(data) == 2
-        assert data[0]["brand_name_jp"] == "A"
-        assert data[1]["brand_name_jp"] == "B"
+        payload1 = data[0]["raw_payload"]
+        payload2 = data[1]["raw_payload"]
+        assert payload1["brand_name_jp"] == "A"
+        assert payload2["brand_name_jp"] == "B"
 
 
 def test_approvals_source_ignore_irrelevant_tables() -> None:
@@ -158,8 +174,10 @@ def test_approvals_source_ignore_irrelevant_tables() -> None:
     with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
+        mock_resp.encoding = "utf-8"
         mock_get.return_value = mock_resp
 
         data = list(approvals_source())
         assert len(data) == 1
-        assert data[0]["brand_name_jp"] == "A"
+        payload = data[0]["raw_payload"]
+        assert payload["brand_name_jp"] == "A"
