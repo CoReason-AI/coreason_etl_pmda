@@ -172,8 +172,7 @@ def test_pipeline_jader_end_to_end_complex(tmp_path: Path, mock_dlt_pipeline: Ma
 
     # Reac
     con.execute(
-        "CREATE TABLE pmda_bronze.bronze_jader_reac "
-        "AS SELECT ' C1 ' as \"識別 番号\", 'Reaction Z' as 有害事象"
+        "CREATE TABLE pmda_bronze.bronze_jader_reac AS SELECT ' C1 ' as \"識別 番号\", 'Reaction Z' as 有害事象"
     )
 
     # Empty Approvals/JAN
