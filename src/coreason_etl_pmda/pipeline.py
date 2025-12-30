@@ -34,7 +34,7 @@ from coreason_etl_pmda.utils_logger import logger
 # I will define the Bronze Ingestion Pipeline here.
 
 
-@logger.catch
+@logger.catch  # type: ignore[misc]
 def run_bronze_pipeline(destination: str = "duckdb", dataset_name: str = "pmda_bronze") -> dlt.Pipeline:
     """
     Runs the Bronze Layer Ingestion.
