@@ -44,6 +44,61 @@ def test_jan_inn_source_excel() -> None:
         mock_read_excel.assert_called_once()
 
 
+def test_jan_inn_source_normalization() -> None:
+    # Verify that Japanese headers are correctly renamed
+    mock_df = pl.DataFrame(
+        {
+            "JAN（日本名）": ["アスピリン"],
+            "JAN（英名）": ["Aspirin"],
+            "INN": ["Aspirin"],
+            "Extra": ["Ignore"],
+        }
+    )
+
+    with (
+        patch("coreason_etl_pmda.sources_jan.requests.get") as mock_get,
+        patch("coreason_etl_pmda.sources_jan.pl.read_excel", return_value=mock_df),
+    ):
+        mock_response = MagicMock()
+        mock_response.content = b"fake content"
+        mock_get.return_value = mock_response
+
+        resource = jan_inn_source()
+        data = list(resource)
+
+        assert len(data) == 1
+        row = data[0]
+        # Check renames
+        assert row["jan_name_jp"] == "アスピリン"
+        assert row["jan_name_en"] == "Aspirin"
+        assert row["inn_name_en"] == "Aspirin"
+        # Check that original Japanese column names are NOT present (renamed)
+        assert "JAN（日本名）" not in row
+        # Extra column remains (or we could choose to drop it, but implementation keeps it)
+        assert "Extra" in row
+
+
+def test_jan_inn_source_missing_jan_name_jp() -> None:
+    # Verify warning if jan_name_jp missing
+    mock_df = pl.DataFrame({"WrongHeader": ["Value"]})
+
+    with (
+        patch("coreason_etl_pmda.sources_jan.requests.get") as mock_get,
+        patch("coreason_etl_pmda.sources_jan.pl.read_excel", return_value=mock_df),
+        patch("coreason_etl_pmda.sources_jan.logger.warning") as mock_warn,
+    ):
+        mock_response = MagicMock()
+        mock_response.content = b"fake content"
+        mock_get.return_value = mock_response
+
+        resource = jan_inn_source()
+        data = list(resource)
+
+        # Should yield rows even if warned
+        assert len(data) == 1
+        mock_warn.assert_called_once()
+
+
 def test_jan_inn_source_csv_fallback() -> None:
     # Mock read_excel failure, succeed read_csv
     mock_df = pl.DataFrame(
