@@ -52,6 +52,25 @@ This project uses **Ruff** for Python linting/formatting, **Mypy** for typing, a
   * *Good:* from loguru import logger -> logger.info("...")
 * **Licensing:** Every .py file must start with the standard license header.
 
+### **Logging & Observability**
+
+* **Standard:** `loguru` is the exclusive logging library. Do not use the built-in `logging` module or `print()`.
+* **Configuration:** The logger is pre-configured in `src/coreason_etl_pmda/utils/logger.py`.
+* **Outputs:**
+    * **Console:** Human-readable text (stderr).
+    * **File:** `logs/app.log` (JSON format) for machine ingestion.
+* **Usage Example:**
+    ```python
+    from coreason_etl_pmda.utils.logger import logger
+
+    # Inside an Agent
+    logger.bind(agent_id="agent_1").info("Agent started task")
+    try:
+        ...
+    except Exception:
+        logger.exception("Agent failed")
+    ```
+
 ### **Legal & Intellectual Property**
 
 Strict Prohibition on External Code:
