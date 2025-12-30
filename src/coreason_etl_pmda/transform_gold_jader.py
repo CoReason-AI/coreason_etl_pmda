@@ -20,122 +20,76 @@ def transform_jader_gold(demo_df: pl.DataFrame, drug_df: pl.DataFrame, reac_df: 
     2. Join: drug.csv (Filter: "Suspected" only)
     3. Join: reac.csv
 
+    Produces a Cartesian product of Suspected Drugs x Reactions per Case.
+
     Schema:
-    case_id (PK from demo?)
-    patient_sex
-    patient_age_group
-    primary_suspect_drug (from drug)
-    reaction_pt (from reac)
-    reporting_year
+    - case_id (from demo.id)
+    - patient_sex (from demo.sex)
+    - patient_age_group (from demo.age)
+    - primary_suspect_drug (from drug.drug_name)
+    - reaction_pt (from reac.reaction)
+    - reporting_year (from demo.reporting_year)
     """
 
-    # Check inputs
-    # We assume 'id' column exists in all for joining.
-    # JADER usually uses an ID column. Spec says "Relational CSVs ... no foreign key constraints defined
-    # in the file headers".
-    # But we assume there is a join key. Usually `id` or `case_id`.
-    # Let's assume `id` based on standard JADER structure (識別番号).
-
+    # 0. Validation
+    # Ensure critical join keys exist
     join_key = "id"
     if join_key not in demo_df.columns:
         raise ValueError(f"demo_df missing key: {join_key}")
     if join_key not in drug_df.columns:
-        raise ValueError(f"drug_df missing key: {join_key}")  # pragma: no cover
+        raise ValueError(f"drug_df missing key: {join_key}")
     if join_key not in reac_df.columns:
-        raise ValueError(f"reac_df missing key: {join_key}")  # pragma: no cover
+        raise ValueError(f"reac_df missing key: {join_key}")
 
-    # 1. Filter Drug for "Suspected"
-    # Spec: "Filter: 'Suspected' only".
-    # We need the column name for suspicion.
-    # Usually `drug_involvement` or `characterization`.
-    # Let's assume a column `characterization` and value `Suspected` or code `1`?
-    # Spec doesn't specify column name, but says "Suspected only".
-    # I will assume column `characterization` and we filter for "Suspected".
-    # If the column is missing, we might assume all are suspected or fail?
-    # Let's assume `characterization` exists.
-
-    if "characterization" in drug_df.columns:
-        suspect_drugs = drug_df.filter(pl.col("characterization") == "Suspected")
-    else:
-        # If column missing, maybe assume all? Or raise?
-        # Let's raise to be safe as per spec requirement.
+    # Ensure drug_df has characterization for filtering
+    if "characterization" not in drug_df.columns:
         raise ValueError("drug_df missing 'characterization' column for filtering suspected drugs")
 
-    # 2. Join Demo + Drug
-    # Left join or Inner?
-    # "Anchor: demo.csv". "Join: drug.csv".
-    # Usually we want cases with suspected drugs.
-    # If a case has no suspected drug, do we keep it?
-    # "100% capture of JADER public releases (zero loss of 'Suspicion' flags due to join errors)."
-    # This implies we prioritize the suspected drugs.
-    # If we left join demo -> drug, we get all demos.
-    # If we inner join, we only get demos with drugs.
-    # "Reconstruction" implies Flattening?
-    # "Schema: case_id, ..., primary_suspect_drug, ..."
-    # This schema looks denormalized (one row per drug-reaction pair? or one per case?)
-    # "primary_suspect_drug" implies one?
-    # But a case can have multiple suspected drugs.
-    # And multiple reactions.
-    # Standard AE reporting (FAERS/JADER) is often one row per (Case, Drug, Reaction).
+    # 1. Filter Drug for "Suspected"
+    # We strictly filter for "Suspected".
+    # Note: Silver layer normalizes "被疑薬" -> "Suspected".
+    suspect_drugs = drug_df.filter(pl.col("characterization") == "Suspected")
 
-    # Let's do: Demo -> Inner Join Drug (Suspected) -> Inner Join Reac?
-    # Or Left Join?
-    # If we use Demo as anchor, Left Join is safer to not lose cases, but if we filter for suspected drugs,
-    # and a case has none, do we want it?
-    # "Zero loss of 'Suspicion' flags" -> We must capture all Suspected Drugs.
-    # So Drug is the critical driver? But Demo is Anchor.
-    # Let's use Inner Join to Drug (Suspected) to ensure we have the drug info.
-    # Then Join Reac.
+    # 2. Join Demo + Drug (Inner Join)
+    # This filters cases to only those with at least one suspected drug.
+    # Note: This creates one row per suspected drug per case.
+    base_drug = demo_df.join(suspect_drugs, on=join_key, how="inner")
 
-    # Demo (1) -- (*) Drug
-    #      (1) -- (*) Reac
-    # This is a many-to-many if we join all?
-    # (Demo-Drug) x Reac -> Cartesian product for that case?
-    # Yes, standard denormalization for analysis usually creates Cartesian of Drugs x Reactions per case.
+    # 3. Join Reac (Inner Join)
+    # This creates the Cartesian product: (Suspected Drugs) x (Reactions)
+    final = base_drug.join(reac_df, on=join_key, how="inner", suffix="_reac")
 
-    # 1. Demo
-    base = demo_df
+    # 4. Select and Rename Columns
+    # We define the target schema mapping.
+    # Source Column -> Target Column
+    # If source column is missing (optional in Silver), we fill with Null.
 
-    # 2. Join Drug
-    # We rename columns to avoid collision?
-    # demo: id, sex, age
-    # drug: id, drug_name, characterization
-    base_drug = base.join(suspect_drugs, on=join_key, how="inner")
+    # Helper to safe select
+    def safe_col(name: str, alias: str) -> pl.Expr:
+        if name in final.columns:
+            return pl.col(name).alias(alias)
+        return pl.lit(None).alias(alias)  # pragma: no cover
 
-    # 3. Join Reac
-    # reac: id, reaction_pt
-    final = base_drug.join(reac_df, on=join_key, how="inner")
+    # Identify source column names.
+    # From Silver JADER:
+    # Demo: id, sex, age, reporting_year
+    # Drug: id, drug_name, characterization
+    # Reac: id, reaction
 
-    # Select and Rename Columns
-    # Schema: case_id, patient_sex, patient_age_group, primary_suspect_drug, reaction_pt, reporting_year
-    # Mapping:
-    # id -> case_id
-    # sex -> patient_sex
-    # age -> patient_age_group
-    # drug_name -> primary_suspect_drug
-    # reaction -> reaction_pt
-    # reporting_year -> (if in demo?)
+    # Note: 'reaction' column from reac_df might conflict if demo had 'reaction' (unlikely).
+    # But since we joined, collision might happen.
+    # demo_df joined drug_df. If drug_df had same cols as demo, they get suffix.
+    # Then joined reac_df.
+    # reac_df has 'reaction'.
 
-    # We assume source columns match these or we map them.
-    # Let's map assuming standard names I used above.
+    # Let's map explicitly.
+    target_cols = [
+        safe_col("id", "case_id"),
+        safe_col("sex", "patient_sex"),
+        safe_col("age", "patient_age_group"),
+        safe_col("drug_name", "primary_suspect_drug"),
+        safe_col("reaction", "reaction_pt"),
+        safe_col("reporting_year", "reporting_year"),
+    ]
 
-    final = final.select(
-        [
-            pl.col("id").alias("case_id"),
-            pl.col("sex").alias("patient_sex") if "sex" in final.columns else pl.lit(None).alias("patient_sex"),
-            pl.col("age").alias("patient_age_group")
-            if "age" in final.columns
-            else pl.lit(None).alias("patient_age_group"),
-            pl.col("drug_name").alias("primary_suspect_drug")
-            if "drug_name" in final.columns
-            else pl.lit(None).alias("primary_suspect_drug"),
-            pl.col("reaction").alias("reaction_pt")
-            if "reaction" in final.columns
-            else pl.lit(None).alias("reaction_pt"),
-            pl.col("reporting_year").alias("reporting_year")
-            if "reporting_year" in final.columns
-            else pl.lit(None).alias("reporting_year"),
-        ]
-    )
-
-    return final
+    return final.select(target_cols)
