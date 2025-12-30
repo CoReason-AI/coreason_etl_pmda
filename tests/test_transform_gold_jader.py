@@ -13,7 +13,8 @@ import pytest
 from coreason_etl_pmda.transform_gold_jader import transform_jader_gold
 
 
-def test_transform_jader_gold() -> None:
+def test_transform_jader_gold_basic() -> None:
+    """Tests basic reconstruction logic."""
     demo = pl.DataFrame({"id": ["1", "2"], "sex": ["M", "F"], "age": ["20s", "30s"], "reporting_year": [2020, 2021]})
 
     drug = pl.DataFrame(
@@ -28,40 +29,119 @@ def test_transform_jader_gold() -> None:
 
     result = transform_jader_gold(demo, drug, reac)
 
-    # Case 1: Has 2 drugs, but only A is suspected.
-    # Join Demo(1) + Drug(A) + Reac(Headache) -> 1 row
-    # Wait, Drug B is Concomitant, filtered out.
-
-    # Case 2: Has Drug C suspected.
-    # Join Demo(2) + Drug(C) + Reac(Nausea) -> 1 row
+    # Logic Check:
+    # Case 1: Drug A (Suspected), Drug B (Concomitant - dropped). Reaction: Headache.
+    # -> 1 Row: (1, M, 20s, Drug A, Headache, 2020)
+    # Case 2: Drug C (Suspected). Reaction: Nausea.
+    # -> 1 Row: (2, F, 30s, Drug C, Nausea, 2021)
 
     assert len(result) == 2
 
+    # Verify Case 1
     row1 = result.filter(pl.col("case_id") == "1").row(0, named=True)
     assert row1["primary_suspect_drug"] == "Drug A"
     assert row1["reaction_pt"] == "Headache"
+    assert row1["patient_sex"] == "M"
 
+    # Verify Case 2
     row2 = result.filter(pl.col("case_id") == "2").row(0, named=True)
     assert row2["primary_suspect_drug"] == "Drug C"
 
 
 def test_transform_jader_gold_cartesian() -> None:
-    # Test 1 case, 2 suspected drugs, 2 reactions -> 4 rows
+    """Tests Cartesian product: 1 Case x 2 Suspected Drugs x 2 Reactions = 4 Rows."""
     demo = pl.DataFrame({"id": ["1"], "sex": ["M"], "age": ["20"], "reporting_year": [2020]})
-    drug = pl.DataFrame({"id": ["1", "1"], "drug_name": ["D1", "D2"], "characterization": ["Suspected", "Suspected"]})
+    drug = pl.DataFrame(
+        {
+            "id": ["1", "1"],
+            "drug_name": ["D1", "D2"],
+            "characterization": ["Suspected", "Suspected"],
+        }
+    )
     reac = pl.DataFrame({"id": ["1", "1"], "reaction": ["R1", "R2"]})
 
     result = transform_jader_gold(demo, drug, reac)
     assert len(result) == 4
 
+    # Verify combinations exist
+    combinations = result.select(["primary_suspect_drug", "reaction_pt"]).sort(["primary_suspect_drug", "reaction_pt"])
+    expected = pl.DataFrame(
+        {
+            "primary_suspect_drug": ["D1", "D1", "D2", "D2"],
+            "reaction_pt": ["R1", "R2", "R1", "R2"],
+        }
+    ).sort(["primary_suspect_drug", "reaction_pt"])
 
-def test_transform_jader_gold_missing_cols() -> None:
-    demo = pl.DataFrame({"other": ["1"]})
+    # Cast to match types (String) if needed, usually polars infers strings.
+    assert combinations.equals(expected)
+
+
+def test_transform_jader_gold_filtering() -> None:
+    """Tests that non-suspected drugs are strictly filtered out."""
+    demo = pl.DataFrame({"id": ["1"]})
+    drug = pl.DataFrame(
+        {
+            "id": ["1", "1"],
+            "drug_name": ["Bad", "Good"],
+            "characterization": ["Concomitant", "Suspected"],
+        }
+    )
+    reac = pl.DataFrame({"id": ["1"], "reaction": ["R"]})
+
+    result = transform_jader_gold(demo, drug, reac)
+    assert len(result) == 1
+    assert result["primary_suspect_drug"][0] == "Good"
+
+
+def test_transform_jader_gold_dropped_cases() -> None:
+    """Tests that cases without suspected drugs or without reactions are dropped (Inner Join)."""
+    demo = pl.DataFrame({"id": ["1", "2", "3"]})
+    # Case 1: Has Suspected Drug, Has Reaction -> Keep
+    # Case 2: Has Concomitant Drug only -> Drop
+    # Case 3: Has Suspected Drug, No Reaction -> Drop (assuming Inner Join on Reac)
+
+    drug = pl.DataFrame(
+        {
+            "id": ["1", "2", "3"],
+            "drug_name": ["D1", "D2", "D3"],
+            "characterization": ["Suspected", "Concomitant", "Suspected"],
+        }
+    )
+
+    reac = pl.DataFrame(
+        {
+            "id": ["1"],  # Only Case 1 has reaction
+            "reaction": ["R1"],
+        }
+    )
+
+    result = transform_jader_gold(demo, drug, reac)
+
+    assert len(result) == 1
+    assert result["case_id"][0] == "1"
+
+
+def test_transform_jader_gold_missing_cols_validation() -> None:
+    """Tests validation for missing keys."""
+    # Missing key in demo
     with pytest.raises(ValueError, match="demo_df missing key"):
-        transform_jader_gold(demo, pl.DataFrame(), pl.DataFrame())
+        transform_jader_gold(pl.DataFrame({"a": [1]}), pl.DataFrame(), pl.DataFrame())
+
+    # Missing key in drug
+    with pytest.raises(ValueError, match="drug_df missing key"):
+        transform_jader_gold(pl.DataFrame({"id": [1]}), pl.DataFrame({"a": [1]}), pl.DataFrame())
+
+    # Missing key in reac
+    with pytest.raises(ValueError, match="reac_df missing key"):
+        transform_jader_gold(
+            pl.DataFrame({"id": [1]}),
+            pl.DataFrame({"id": [1], "characterization": ["Suspected"]}),
+            pl.DataFrame({"a": [1]}),
+        )
 
 
-def test_transform_jader_gold_missing_char() -> None:
+def test_transform_jader_gold_missing_characterization() -> None:
+    """Tests validation for missing characterization column."""
     demo = pl.DataFrame({"id": ["1"]})
     drug = pl.DataFrame({"id": ["1"]})  # Missing characterization
     reac = pl.DataFrame({"id": ["1"]})
