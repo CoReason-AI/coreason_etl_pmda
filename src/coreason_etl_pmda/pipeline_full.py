@@ -9,8 +9,6 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 import os
-from pathlib import Path
-
 import duckdb
 import polars as pl
 
@@ -45,8 +43,8 @@ class PipelineOrchestrator:
         Delegates to dlt pipeline.
         """
         logger.info("Starting Bronze Layer...")
-        # Close connection briefly to allow dlt to open it exclusively if needed (though duckdb supports concurrency if read/write is managed)
-        # dlt usually requires exclusive lock if it writes? DuckDB 0.10+ has better concurrency but better safe.
+        # Close connection briefly to allow dlt to open it exclusively.
+        # dlt usually requires exclusive lock if it writes.
         self.con.close()
 
         try:
@@ -76,12 +74,6 @@ class PipelineOrchestrator:
     def _run_silver_approvals(self) -> None:
         logger.info("Processing Silver Approvals...")
 
-        # Read Bronze Tables
-        # dlt tables are likely in `pmda_bronze` schema or main?
-        # dlt dataset_name="pmda_bronze" -> schema "pmda_bronze".
-        # We need to verify if dlt created a schema or just prefixed tables.
-        # Usually `dataset_name` in dlt with DuckDB creates a schema `pmda_bronze`.
-
         bronze_schema = "pmda_bronze"
 
         # Check if tables exist
@@ -103,24 +95,18 @@ class PipelineOrchestrator:
         if jan_df.height > 0:
             silver_approvals = jan_bridge_lookup(silver_approvals, jan_df)
         else:
-            # If no JAN data, we might need to add the column as null
             logger.warning("JAN Reference data empty/missing. Skipping Lookup.")
             silver_approvals = silver_approvals.with_columns(pl.lit(None).cast(pl.String).alias("generic_name_en"))
 
         # AI Fallback
-        # Check env var for key
         if os.getenv("DEEPSEEK_API_KEY"):
             silver_approvals = jan_bridge_ai_fallback(silver_approvals)
         else:
             logger.info("DEEPSEEK_API_KEY not set. Skipping AI Fallback.")
-            # Ensure status column exists
             if "_translation_status" not in silver_approvals.columns:
-                 silver_approvals = silver_approvals.with_columns(pl.lit("skipped_no_key").alias("_translation_status"))
+                silver_approvals = silver_approvals.with_columns(pl.lit("skipped_no_key").alias("_translation_status"))
 
         # Write to Silver
-        # We write to `pmda_silver` schema? Or just `silver_approvals` in main?
-        # Let's use `pmda_silver` schema.
-        # self.con.execute("CREATE SCHEMA IF NOT EXISTS pmda_silver") # Moved to run_silver
         self._write_table("pmda_silver.silver_approvals", silver_approvals)
 
     def _run_silver_jader(self) -> None:
@@ -182,7 +168,7 @@ class PipelineOrchestrator:
                 logger.warning("One or more Silver JADER tables empty. Skipping Gold JADER.")
 
         except duckdb.Error:
-             logger.warning("Silver JADER tables not found. Skipping Gold JADER.")
+            logger.warning("Silver JADER tables not found. Skipping Gold JADER.")
 
         logger.info("Gold Layer Complete.")
 
@@ -190,17 +176,7 @@ class PipelineOrchestrator:
         """
         Writes Polars DataFrame to DuckDB table.
         """
-        # Register view
-        # We need a unique view name to avoid collision?
-        # Or just register as 'temp_view' and drop it?
         view_name = f"view_{table_name.replace('.', '_')}"
-
-        # DuckDB python api doesn't support direct registration of Polars DF in all versions?
-        # It does if we use `.pl()` and `duckdb.sql("...").pl()`.
-        # To write: `con.execute("CREATE TABLE x AS SELECT * FROM df")`.
-        # But we need to pass `df` to sql context.
-        # `con.register(name, df)` works for pandas. For Polars, recent DuckDB supports it.
-        # If not, we convert to Arrow.
 
         try:
             self.con.register(view_name, df)
@@ -211,8 +187,9 @@ class PipelineOrchestrator:
             logger.error(f"Failed to write {table_name}: {e}")
             raise
 
+
 def run_full_pipeline(duckdb_path: str | None = None) -> None:
-    path = duckdb_path or os.getenv("DUCKDB_PATH", "pmda.duckdb")
+    path: str = duckdb_path or os.getenv("DUCKDB_PATH", "pmda.duckdb")
     orchestrator = PipelineOrchestrator(path)
     try:
         orchestrator.run_bronze()
@@ -220,6 +197,7 @@ def run_full_pipeline(duckdb_path: str | None = None) -> None:
         orchestrator.run_gold()
     finally:
         orchestrator.close()
+
 
 if __name__ == "__main__":
     run_full_pipeline()  # pragma: no cover

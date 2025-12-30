@@ -9,13 +9,12 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 import os
-import dlt
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from coreason_etl_pmda.pipeline import run_bronze_pipeline
 
-def test_run_bronze_pipeline_defaults():
+
+def test_run_bronze_pipeline_defaults() -> None:
     with patch("dlt.pipeline") as mock_pipeline:
         mock_p = MagicMock()
         mock_pipeline.return_value = mock_p
@@ -30,7 +29,8 @@ def test_run_bronze_pipeline_defaults():
             dataset_name="pmda_bronze",
         )
 
-def test_run_bronze_pipeline_custom_path():
+
+def test_run_bronze_pipeline_custom_path() -> None:
     with patch("dlt.pipeline") as mock_pipeline:
         mock_p = MagicMock()
         mock_pipeline.return_value = mock_p
@@ -43,7 +43,8 @@ def test_run_bronze_pipeline_custom_path():
             dataset_name="pmda_bronze",
         )
 
-def test_run_bronze_pipeline_env_var():
+
+def test_run_bronze_pipeline_env_var() -> None:
     with patch("dlt.pipeline") as mock_pipeline:
         mock_p = MagicMock()
         mock_pipeline.return_value = mock_p
@@ -57,7 +58,8 @@ def test_run_bronze_pipeline_env_var():
             dataset_name="pmda_bronze",
         )
 
-def test_run_bronze_pipeline_custom_destination_obj():
+
+def test_run_bronze_pipeline_custom_destination_obj() -> None:
     # If user passes a custom destination object (not string "duckdb")
     # duckdb_path should be ignored or irrelevant?
     custom_dest = MagicMock()
