@@ -9,7 +9,8 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 """
-standardized data pipeline designed to ingest, normalize, and project regulatory data from Japan’s Pharmaceuticals and Medical Devices Agency (PMDA)
+standardized data pipeline designed to ingest, normalize, and project regulatory data from Japan’s Pharmaceuticals and
+Medical Devices Agency (PMDA)
 """
 
 __version__ = "0.1.0"

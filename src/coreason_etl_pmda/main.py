@@ -11,7 +11,7 @@
 from coreason_etl_pmda.utils.logger import logger
 
 
-@logger.catch
+@logger.catch  # type: ignore
 def hello_world() -> str:
     logger.bind(context="main").info("Hello World!")
     return "Hello World!"
