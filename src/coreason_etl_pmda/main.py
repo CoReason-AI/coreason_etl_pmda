@@ -8,13 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
-import os
-import sys
-
-from loguru import logger
-
-logger.remove()
-logger.add(sys.stderr, level=os.getenv("LOG_LEVEL", "INFO"))
+from coreason_etl_pmda.utils_logger import logger
 
 
 def hello_world() -> str:
