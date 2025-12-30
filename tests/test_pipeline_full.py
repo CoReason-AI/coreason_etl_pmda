@@ -20,7 +20,7 @@ import pytest
 from coreason_etl_pmda.pipeline_full import PipelineOrchestrator, run_full_pipeline
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def mock_dlt_pipeline() -> Generator[MagicMock, None, None]:
     with patch("coreason_etl_pmda.pipeline_full.run_bronze_pipeline") as mock:
         yield mock
@@ -38,41 +38,35 @@ def test_full_pipeline_orchestration(tmp_path: Path, mock_dlt_pipeline: MagicMoc
     con.execute("CREATE SCHEMA pmda_bronze")
 
     # Approvals
-    approvals_data = pl.DataFrame({
-        "承認番号": ["123"],
-        "承認年月日": ["R2.1.1"],
-        "販売名": ["DrugA"],
-        "一般的名称": ["GenericA"],
-        "申請者氏名": ["ApplicantA"]
-    })
+    approvals_data = pl.DataFrame(
+        {
+            "承認番号": ["123"],
+            "承認年月日": ["R2.1.1"],
+            "販売名": ["DrugA"],
+            "一般的名称": ["GenericA"],
+            "申請者氏名": ["ApplicantA"],
+        }
+    )
     con.register("df_approvals", approvals_data)
     con.execute("CREATE TABLE pmda_bronze.bronze_approvals AS SELECT * FROM df_approvals")
 
     # JAN
-    jan_data = pl.DataFrame({
-        "jan_name_jp": ["GenericA"],
-        "jan_name_en": ["GenericA (JAN)"],
-        "inn_name_en": ["GenericA (INN)"]
-    })
+    jan_data = pl.DataFrame(
+        {"jan_name_jp": ["GenericA"], "jan_name_en": ["GenericA (JAN)"], "inn_name_en": ["GenericA (INN)"]}
+    )
     con.register("df_jan", jan_data)
     con.execute("CREATE TABLE pmda_bronze.bronze_ref_jan_inn AS SELECT * FROM df_jan")
 
     # JADER
-    demo_data = pl.DataFrame({
-        "識別番号": ["C1"],
-        "性別": ["Male"],
-        "年齢": ["50"],
-        "報告年度": ["2020"]
-    })
-    drug_data = pl.DataFrame({
-        "識別番号": ["C1"],
-        "医薬品（一般名）": ["DrugA"],
-        "被疑薬等区分": ["被疑薬"]  # Suspected
-    })
-    reac_data = pl.DataFrame({
-        "識別番号": ["C1"],
-        "有害事象": ["ReactionX"]
-    })
+    demo_data = pl.DataFrame({"識別番号": ["C1"], "性別": ["Male"], "年齢": ["50"], "報告年度": ["2020"]})
+    drug_data = pl.DataFrame(
+        {
+            "識別番号": ["C1"],
+            "医薬品（一般名）": ["DrugA"],
+            "被疑薬等区分": ["被疑薬"],  # Suspected
+        }
+    )
+    reac_data = pl.DataFrame({"識別番号": ["C1"], "有害事象": ["ReactionX"]})
 
     con.register("df_demo", demo_data)
     con.register("df_drug", drug_data)

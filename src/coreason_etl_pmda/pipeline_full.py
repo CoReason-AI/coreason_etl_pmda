@@ -9,6 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 import os
+
 import duckdb
 import polars as pl
 
@@ -189,7 +190,10 @@ class PipelineOrchestrator:
 
 
 def run_full_pipeline(duckdb_path: str | None = None) -> None:
-    path: str = duckdb_path or os.getenv("DUCKDB_PATH", "pmda.duckdb")
+    # Explicitly fallback to ensure str type for Mypy
+    default_path = os.getenv("DUCKDB_PATH", "pmda.duckdb")
+    path: str = duckdb_path if duckdb_path else default_path
+
     orchestrator = PipelineOrchestrator(path)
     try:
         orchestrator.run_bronze()
