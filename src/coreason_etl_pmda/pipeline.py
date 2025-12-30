@@ -8,6 +8,9 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+import os
+from typing import Any
+
 import dlt
 
 from coreason_etl_pmda.sources_approvals import approvals_source
@@ -35,10 +38,30 @@ from coreason_etl_pmda.utils_logger import logger
 
 
 @logger.catch  # type: ignore[misc]
-def run_bronze_pipeline(destination: str = "duckdb", dataset_name: str = "pmda_bronze") -> dlt.Pipeline:
+def run_bronze_pipeline(
+    destination: Any = "duckdb",
+    dataset_name: str = "pmda_bronze",
+    duckdb_path: str | None = None,
+) -> dlt.Pipeline:
     """
     Runs the Bronze Layer Ingestion.
     """
+    # If duckdb_path is provided, we configure the destination to use it.
+    # dlt accepts a connection string like "duckdb:///path/to.db"
+    # or we can pass a dlt destination object.
+    if duckdb_path:
+        # Check if destination is the string "duckdb"
+        if destination == "duckdb":
+            destination = f"duckdb:///{duckdb_path}"
+        # If user passed a custom destination object, we ignore duckdb_path or warn?
+        # We assume if duckdb_path is set, they want to use it.
+
+    # Fallback to env var if not explicitly passed but configured in environment
+    if not duckdb_path and destination == "duckdb":
+        env_path = os.getenv("DUCKDB_PATH")
+        if env_path:
+            destination = f"duckdb:///{env_path}"
+
     p = dlt.pipeline(
         pipeline_name="coreason_etl_pmda_bronze",
         destination=destination,
