@@ -168,7 +168,7 @@ class PipelineOrchestrator:
             drug = self.con.sql("SELECT * FROM pmda_silver.silver_jader_drug").pl()
             reac = self.con.sql("SELECT * FROM pmda_silver.silver_jader_reac").pl()
         except duckdb.Error:
-             logger.warning("Silver JADER tables not found. Skipping Gold JADER.")
+            logger.warning("Silver JADER tables not found. Skipping Gold JADER.")
 
         if (
             demo is not None
@@ -180,7 +180,7 @@ class PipelineOrchestrator:
         ):
             gold_jader = transform_jader_gold(demo, drug, reac)
             self._write_table("pmda_gold.pmda_adverse_events", gold_jader)
-        elif demo is not None: # Means tables existed but were empty
+        elif demo is not None:  # Means tables existed but were empty
             logger.warning("One or more Silver JADER tables empty. Skipping Gold JADER.")
 
         logger.info("Gold Layer Complete.")
