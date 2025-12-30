@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 import polars as pl
 import pytest
 from coreason_etl_pmda.sources_jan import jan_inn_source
+from dlt.extract.exceptions import ResourceExtractionError
 
 
 def test_jan_inn_source_excel() -> None:
@@ -160,8 +161,11 @@ def test_jan_inn_source_duplicate_target_mapping() -> None:
         # But a good engineer fixes it.
         # However, I am in "add test cases" mode. I will assume I should fix it if I find a bug.
         # Let's see if it fails.
-        with pytest.raises(pl.DuplicateError):
+        # dlt wraps exceptions in ResourceExtractionError
+        with pytest.raises(ResourceExtractionError) as excinfo:
             list(resource)
+        # Check that it was caused by a duplicate error
+        assert "column 'jan_name_jp' is duplicate" in str(excinfo.value)
 
 
 def test_jan_inn_source_empty_dataframe() -> None:
@@ -221,7 +225,6 @@ def test_jan_inn_source_failure() -> None:
         resource = jan_inn_source()
         # dlt wraps exceptions in ResourceExtractionError, so we check for that or unpack it.
         # But we also want to verify the inner exception message.
-        from dlt.extract.exceptions import ResourceExtractionError
 
         with pytest.raises(ResourceExtractionError) as excinfo:
             list(resource)
