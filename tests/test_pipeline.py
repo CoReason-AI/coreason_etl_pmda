@@ -8,22 +8,69 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
-from unittest.mock import MagicMock, patch
+import os
+import dlt
+import pytest
+from unittest.mock import patch, MagicMock
 
 from coreason_etl_pmda.pipeline import run_bronze_pipeline
 
+def test_run_bronze_pipeline_defaults():
+    with patch("dlt.pipeline") as mock_pipeline:
+        mock_p = MagicMock()
+        mock_pipeline.return_value = mock_p
+        mock_p.run.return_value = "info"
 
-def test_run_bronze_pipeline() -> None:
-    with patch("coreason_etl_pmda.pipeline.dlt.pipeline") as mock_pipeline:
-        mock_p_instance = MagicMock()
-        mock_pipeline.return_value = mock_p_instance
+        info = run_bronze_pipeline()
 
-        # Mock sources to be iterables
-        with (
-            patch("coreason_etl_pmda.pipeline.jan_inn_source", return_value=[]),
-            patch("coreason_etl_pmda.pipeline.approvals_source", return_value=[]),
-            patch("coreason_etl_pmda.pipeline.jader_source", return_value=[]),
-        ):
+        assert info == "info"
+        mock_pipeline.assert_called_with(
+            pipeline_name="coreason_etl_pmda_bronze",
+            destination="duckdb",
+            dataset_name="pmda_bronze",
+        )
+
+def test_run_bronze_pipeline_custom_path():
+    with patch("dlt.pipeline") as mock_pipeline:
+        mock_p = MagicMock()
+        mock_pipeline.return_value = mock_p
+
+        run_bronze_pipeline(duckdb_path="custom.db")
+
+        mock_pipeline.assert_called_with(
+            pipeline_name="coreason_etl_pmda_bronze",
+            destination="duckdb:///custom.db",
+            dataset_name="pmda_bronze",
+        )
+
+def test_run_bronze_pipeline_env_var():
+    with patch("dlt.pipeline") as mock_pipeline:
+        mock_p = MagicMock()
+        mock_pipeline.return_value = mock_p
+
+        with patch.dict(os.environ, {"DUCKDB_PATH": "env.db"}):
             run_bronze_pipeline()
 
-            mock_p_instance.run.assert_called()
+        mock_pipeline.assert_called_with(
+            pipeline_name="coreason_etl_pmda_bronze",
+            destination="duckdb:///env.db",
+            dataset_name="pmda_bronze",
+        )
+
+def test_run_bronze_pipeline_custom_destination_obj():
+    # If user passes a custom destination object (not string "duckdb")
+    # duckdb_path should be ignored or irrelevant?
+    custom_dest = MagicMock()
+
+    with patch("dlt.pipeline") as mock_pipeline:
+        mock_p = MagicMock()
+        mock_pipeline.return_value = mock_p
+
+        run_bronze_pipeline(destination=custom_dest, duckdb_path="ignored.db")
+
+        # It shouldn't change destination
+        mock_pipeline.assert_called_with(
+            pipeline_name="coreason_etl_pmda_bronze",
+            destination=custom_dest,
+            dataset_name="pmda_bronze",
+        )
