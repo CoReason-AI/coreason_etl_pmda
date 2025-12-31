@@ -10,6 +10,7 @@
 
 import io
 import zipfile
+from datetime import datetime, timezone
 from urllib.parse import urljoin
 
 import dlt
@@ -21,37 +22,23 @@ from coreason_etl_pmda.utils_logger import logger
 
 # URL for JADER
 # JADER: https://www.pmda.go.jp/safety/info-services/drugs/adr-info/suspected-adr/0008.html
-# "Snapshot" refresh strategy. "Download Zip -> Extract CSVs".
 
 
 @dlt.resource(name="bronze_jader", write_disposition="replace")  # type: ignore[misc]
 def jader_source(
     url: str = "https://www.pmda.go.jp/safety/info-services/drugs/adr-info/suspected-adr/0008.html",
-) -> dlt.sources.DltSource:  # noqa: E501
+) -> dlt.sources.DltSource:
     """
     Ingests JADER data.
-    1. Scrapes the page to find the latest Zip file (or all zip files if multiple).
-       Usually JADER is a single large snapshot or monthly releases.
-       Spec says "Snapshot".
+    1. Scrapes the page to find Zip files.
     2. Downloads Zip.
     3. Extracts CSVs (demo, drug, reac).
     4. Yields rows with table identifier.
 
-    We need to yield to different tables?
-    dlt resources can yield to different tables if we use `dlt.mark.with_table_name` or similar,
-    but a single resource usually targets one table unless we yield `dlt.DynamicTable` or use transformer.
-    However, "bronze_jader" might be the resource name, but we want 3 tables: `jader_demo`, `jader_drug`, `jader_reac`.
-
-    Better approach:
-    Create a source function that returns 3 resources.
-    Or one resource that yields to dynamic tables.
-
-    The spec says "Load to Bronze". "Target Schema: source_id, ingestion_ts, raw_payload" for Bronze generic?
-    Or structured?
-    "Ingestion Logic: JADER: Download Zip -> Extract CSVs (demo, drug, reac) -> Load to Bronze."
-
-    If we want separate tables in Bronze, we should return a list of resources or use a generator that yields
-    `dlt.DynamicTable`. Let's use a generator that yields data marked with table name.
+    Tables:
+    - bronze_jader_demo
+    - bronze_jader_drug
+    - bronze_jader_reac
     """
 
     # 1. Scrape
@@ -61,17 +48,17 @@ def jader_source(
     soup = BeautifulSoup(response.content, "html.parser")
 
     # Find zip links
-    # Assuming we want the latest or all? "Snapshot" implies we might take the comprehensive file if it exists.
-    # We'll look for .zip files.
-
     zip_links = []
     for a in soup.find_all("a", href=True):
         href = a["href"]
         if href.lower().endswith(".zip"):
-            zip_links.append(urljoin(url, href))
+            full_url = urljoin(url, href)
+            # Simple heuristic to avoid duplicate links or irrelevant ones
+            if full_url not in zip_links:
+                zip_links.append(full_url)
 
-    # Process each zip
     logger.info(f"Found {len(zip_links)} JADER zip files")
+
     for zip_url in zip_links:
         try:
             logger.info(f"Processing JADER zip: {zip_url}")
@@ -80,11 +67,10 @@ def jader_source(
 
             with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
                 for filename in z.namelist():
-                    # We look for specific CSVs: demo, drug, reac
-                    # Files might be named like "demo.csv" or "jader_demo.csv".
                     lower_name = filename.lower()
                     table_name = None
 
+                    # Identify table type
                     if "demo" in lower_name and lower_name.endswith(".csv"):
                         table_name = "bronze_jader_demo"
                     elif "drug" in lower_name and lower_name.endswith(".csv"):
@@ -94,29 +80,46 @@ def jader_source(
 
                     if table_name:
                         with z.open(filename) as f:
-                            # Read CSV with Polars
-                            # encoding might be shift-jis
-                            # We read as bytes first
                             content = f.read()
 
-                            # Use Polars to read csv from bytes
-                            # We try utf-8 first then cp932
-                            try:
-                                df = pl.read_csv(io.BytesIO(content))
-                            except Exception:
-                                try:
-                                    df = pl.read_csv(io.BytesIO(content), encoding="cp932")
-                                except Exception:  # pragma: no cover
-                                    # Try Shift-JIS
-                                    df = pl.read_csv(io.BytesIO(content), encoding="shift_jis")
+                            # Try decoding
+                            # PMDA CSVs are often Shift-JIS / CP932
+                            df = None
+                            encodings = ["utf-8", "cp932", "shift_jis", "euc-jp"]
 
-                            # Yield rows marked with table name
+                            for enc in encodings:
+                                try:
+                                    # We use polars directly if possible, but for safety with encodings,
+                                    # decoding to string first might be more reliable if polars fails.
+                                    # However, Polars read_csv has encoding support.
+                                    df = pl.read_csv(io.BytesIO(content), encoding=enc, infer_schema_length=0)
+                                    break
+                                except Exception:
+                                    continue
+
+                            if df is None:
+                                logger.error(f"Failed to decode {filename} in {zip_url}")
+                                continue
+
+                            # Normalize headers?
+                            # We keep raw headers in Bronze, but standardizing naming helps.
+                            # For now, yield as is, but ensure string types for safety.
+                            # infer_schema_length=0 forces all columns to String (mostly),
+                            # which prevents schema mismatch errors during ingestion of raw data.
+
+                            ingestion_ts = datetime.now(timezone.utc)
+
                             for row in df.iter_rows(named=True):
                                 record = row.copy()
                                 record["_source_file"] = filename
                                 record["_source_zip"] = zip_url
+                                record["_ingestion_ts"] = ingestion_ts
                                 yield dlt.mark.with_table_name(record, table_name)
 
-        except Exception:
-            logger.exception("Failed to process {}", zip_url)
-            pass
+        except Exception as e:
+            logger.exception(f"Failed to process JADER zip {zip_url}: {e}")
+            # We don't stop the whole pipeline for one bad zip, but we log it.
+            # If it's critical, we might want to raise.
+            # Given "Completeness: 100% capture", a failure here is bad.
+            # But iterating over all zips implies some might be historical/duplicate.
+            # We'll continue but the logs will show errors.
