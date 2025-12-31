@@ -20,24 +20,12 @@ ERA_START_YEARS = {
     "Meiji": 1868,
 }
 
-# Regex to parse Japanese dates like "Reiwa 2 (2020) May 1" or "Reiwa Gannen"
-# Typical formats seen in PMDA:
-# - "Reiwa 2 (2020) . 5 . 1"
-# - "Reiwa Gannen ..."
-# - "R2.5.1" (though usually full kanji/names are used in docs)
-# We will focus on the structure described in the problem statement: "Reiwa Gannen" or "Reiwa 2"
-# and we need to output ISO 8601 YYYY-MM-DD.
-# The input might be a full string or just the year part. The spec says "Convert Japanese Era (Reiwa 2) to
-# ISO 8601 (2020-01-01)".
-# If only year is provided, we might default to Jan 1? Or does it expect full date?
-# "Reiwa 2 to ISO 8601 (2020-01-01)" suggests handling full dates, or defaulting.
-# Let's assume we need to parse full dates where possible, but the Gannen logic is the critical part.
-
 
 def convert_japanese_date_to_iso(date_str: str) -> str | None:
     """
     Parses a Japanese era date string and converts it to ISO 8601 format (YYYY-MM-DD).
     Handles 'Gannen' (first year) and standard years.
+    Supports both English (Reiwa) and Kanji (令和) formats.
     Returns None if parsing fails.
     """
     if not date_str:
@@ -48,57 +36,45 @@ def convert_japanese_date_to_iso(date_str: str) -> str | None:
 
     # Regex for "Era Year Month Day" pattern
     # Supports:
-    # - Reiwa 2
-    # - Reiwa Gannen
-    # - R2
-    # - H30
+    # - Reiwa 2, Reiwa Gannen, R2
+    # - 令和2, 令和元年
     # Separators can be ., -, /, or Japanese characters like 年, 月, 日
 
-    # We'll start with a flexible regex.
-    # Pattern: (Era)(Space?)(Year|Gannen)(Separator)(Month)(Separator)(Day)
+    era_pattern = r"(?P<era>Reiwa|Heisei|Showa|Taisho|Meiji|R|H|S|T|M|令和|平成|昭和|大正|明治)"
+    year_pattern = r"(?P<year>\d+|Gannen|元年)"
 
-    # Era mapping (English and Kanji, though spec uses English examples "Reiwa Gannen")
-    # We should support Kanji if possible, but start with English as per spec examples.
-
-    era_pattern = r"(?P<era>Reiwa|Heisei|Showa|Taisho|Meiji|R|H|S|T|M)"
-    year_pattern = r"(?P<year>\d+|Gannen)"
-
-    # Matches "Reiwa 2", "Reiwa Gannen", "R2"
-    # Followed optionally by month and day
-    # e.g. "Reiwa 2.5.1", "Reiwa 2 (2020) . 5 . 1"
-
-    # A simple approach is to extract Era and Year first.
+    # Match Era and Year
     match = re.search(f"{era_pattern}\\s*{year_pattern}", clean_str, re.IGNORECASE)
 
     if not match:
-        # Try to see if it's already YYYY-MM-DD or similar? No, strict JP conversion here.
         return None
 
-    era_str = match.group("era").capitalize()
+    era_str = match.group("era")
     year_str = match.group("year")
 
-    # Normalize Era
-    if era_str.startswith("R"):
-        era = "Reiwa"
-    elif era_str.startswith("H"):
-        era = "Heisei"
-    elif era_str.startswith("S"):
-        era = "Showa"
-    elif era_str.startswith("T"):
-        era = "Taisho"
-    elif era_str.startswith("M"):
-        era = "Meiji"
-    else:  # pragma: no cover
-        era = era_str  # Full name
+    # Normalize Era to English Key
+    # Capitalize first if it's English to handle "reiwa" -> "Reiwa"
+    if era_str[0].isascii():
+        era_str = era_str.capitalize()
 
-    start_year = ERA_START_YEARS.get(era)
-    # The regex guarantees 'era' is one of the keys in ERA_START_YEARS,
-    # so start_year cannot be None.
+    era_norm = era_str
+    if era_str.startswith("R") or era_str == "令和":
+        era_norm = "Reiwa"
+    elif era_str.startswith("H") or era_str == "平成":
+        era_norm = "Heisei"
+    elif era_str.startswith("S") or era_str == "昭和":
+        era_norm = "Showa"
+    elif era_str.startswith("T") or era_str == "大正":
+        era_norm = "Taisho"
+    elif era_str.startswith("M") or era_str == "明治":
+        era_norm = "Meiji"
+
+    start_year = ERA_START_YEARS.get(era_norm)
     if start_year is None:  # pragma: no cover
-        # Should be unreachable given the regex validation
         return None
 
-    if year_str.lower() == "gannen":
+    # Handle Gannen
+    if year_str.lower() in ["gannen", "元年"]:
         year_offset = 0  # Gannen is year 1
     else:
         year_offset = int(year_str) - 1
@@ -106,17 +82,11 @@ def convert_japanese_date_to_iso(date_str: str) -> str | None:
     gregorian_year = start_year + year_offset
 
     # Now look for Month and Day
-    # We look for digits after the era/year block.
-    # Common formats:
-    # Reiwa 2 . 5 . 1
-    # Reiwa 2 (2020) . 5 . 1
-    # Reiwa 2年5月1日
-
-    # Remove the Era/Year part we found to search for the rest
+    # Remove the Era/Year part we found
     remaining = clean_str[match.end() :]
 
     # If there is a parenthetical year (2020), ignore it
-    remaining = re.sub(r"\(\d{4}\)", "", remaining)
+    remaining = re.sub(r"\(\d{4}[^\)]*\)", "", remaining)
 
     # Find next numbers
     numbers = re.findall(r"\d+", remaining)
@@ -130,12 +100,12 @@ def convert_japanese_date_to_iso(date_str: str) -> str | None:
     elif len(numbers) == 1:
         month = int(numbers[0])
         # Default day 1
-    else:  # pragma: no cover
-        # Should be covered by "if len >= 2" logic usually, but if no numbers found
+    else:
+        # If no numbers found, default to Jan 1
         pass
 
     try:
         dt = datetime.date(gregorian_year, month, day)
         return dt.isoformat()
     except ValueError:
-        return None  # pragma: no cover
+        return None
