@@ -8,26 +8,26 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
-import dlt
 import pytest
-
 from coreason_etl_pmda.sources_package_inserts import package_inserts_source
 
 
-@pytest.fixture
-def mock_requests_session():
+@pytest.fixture  # type: ignore[misc]
+def mock_requests_session() -> Iterator[MagicMock]:
     with patch("coreason_etl_pmda.sources_package_inserts.requests.Session") as mock:
         yield mock
 
-def test_package_inserts_source_no_results(mock_requests_session):
+
+def test_package_inserts_source_no_results(mock_requests_session: MagicMock) -> None:
     """Test that source handles no results gracefully."""
     session_instance = mock_requests_session.return_value
 
     # Mock Search Response (No results)
     mock_response = MagicMock()
-    mock_response.text = "該当するデータはありません" # "No matching data"
+    mock_response.text = "該当するデータはありません"  # "No matching data"
     mock_response.content = b"<html><body>No results</body></html>"
     session_instance.post.return_value = mock_response
 
@@ -37,7 +37,8 @@ def test_package_inserts_source_no_results(mock_requests_session):
     assert len(data) == 0
     session_instance.post.assert_called_once()
 
-def test_package_inserts_source_with_results(mock_requests_session):
+
+def test_package_inserts_source_with_results(mock_requests_session: MagicMock) -> None:
     """Test that source parses results and follows links."""
     session_instance = mock_requests_session.return_value
 
@@ -84,7 +85,7 @@ def test_package_inserts_source_with_results(mock_requests_session):
     # 2. Detail Page
     # 3. Content
 
-    def get_side_effect(url, *args, **kwargs):
+    def get_side_effect(url: str, *args: list[object], **kwargs: dict[str, object]) -> MagicMock:
         if "iyakuDetail" in url:
             return mock_detail_resp
         if url.endswith(".xml"):
@@ -103,7 +104,8 @@ def test_package_inserts_source_with_results(mock_requests_session):
     assert item["raw_payload"]["content"] == b"<xml>Content</xml>"
     assert item["raw_payload"]["source_url"].endswith("123456")
 
-def test_package_inserts_pagination(mock_requests_session):
+
+def test_package_inserts_pagination(mock_requests_session: MagicMock) -> None:
     """Test pagination logic."""
     session_instance = mock_requests_session.return_value
 
@@ -146,7 +148,7 @@ def test_package_inserts_pagination(mock_requests_session):
 
     session_instance.post.return_value = mock_page1
 
-    def get_side_effect(url, *args, **kwargs):
+    def get_side_effect(url: str, *args: list[object], **kwargs: dict[str, object]) -> MagicMock:
         if "page2" in url:
             return mock_page2
         if "iyakuDetail" in url:
@@ -165,13 +167,16 @@ def test_package_inserts_pagination(mock_requests_session):
     assert "1" in ids
     assert "2" in ids
 
-def test_package_inserts_fallback_link(mock_requests_session):
+
+def test_package_inserts_fallback_link(mock_requests_session: MagicMock) -> None:
     """Test finding link by text when extension check fails."""
     session_instance = mock_requests_session.return_value
 
     mock_search_resp = MagicMock()
     mock_search_resp.text = "Results"
-    mock_search_resp.content = b'<html><table><tr><td><a href="/PmdaSearch/iyakuDetail/GeneralList/3">Detail</a></td></tr></table></html>'
+    mock_search_resp.content = (
+        b'<html><table><tr><td><a href="/PmdaSearch/iyakuDetail/GeneralList/3">Detail</a></td></tr></table></html>'
+    )
     session_instance.post.return_value = mock_search_resp
 
     # Detail page with no .xml link but a link with text "添付文書" (assuming it points to HTML/SGML)
@@ -189,7 +194,7 @@ def test_package_inserts_fallback_link(mock_requests_session):
     mock_content_resp.content = b"Content"
     mock_content_resp.encoding = "utf-8"
 
-    def get_side_effect(url, *args, **kwargs):
+    def get_side_effect(url: str, *args: list[object], **kwargs: dict[str, object]) -> MagicMock:
         if "iyakuDetail" in url:
             return mock_detail_resp
         if "/view/doc" in url:
@@ -204,17 +209,20 @@ def test_package_inserts_fallback_link(mock_requests_session):
     assert len(data) == 1
     assert data[0]["source_id"].endswith("/view/doc")
 
-def test_package_inserts_error_handling(mock_requests_session):
+
+def test_package_inserts_error_handling(mock_requests_session: MagicMock) -> None:
     """Test error handling when detail page fetch fails."""
     session_instance = mock_requests_session.return_value
 
     mock_search_resp = MagicMock()
     mock_search_resp.text = "Results"
-    mock_search_resp.content = b'<html><table><tr><td><a href="/PmdaSearch/iyakuDetail/GeneralList/4">Detail</a></td></tr></table></html>'
+    mock_search_resp.content = (
+        b'<html><table><tr><td><a href="/PmdaSearch/iyakuDetail/GeneralList/4">Detail</a></td></tr></table></html>'
+    )
     session_instance.post.return_value = mock_search_resp
 
     # Detail page fetch raises exception
-    def get_side_effect(url, *args, **kwargs):
+    def get_side_effect(url: str, *args: list[object], **kwargs: dict[str, object]) -> MagicMock:
         if "iyakuDetail" in url:
             raise Exception("Network Error")
         return MagicMock()

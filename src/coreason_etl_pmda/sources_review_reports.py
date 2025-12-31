@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from urllib.parse import urljoin
 
 import dlt
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
 from dlt.sources.helpers import requests
 
 from coreason_etl_pmda.utils_logger import logger
@@ -127,8 +127,8 @@ def review_reports_source(
                                 "content": pdf_resp.content,
                                 "brand_name_jp": brand_name,
                                 "part_index": i + 1,
-                                "source_page_url": url
-                            }
+                                "source_page_url": url,
+                            },
                         }
 
                         # Mark as downloaded

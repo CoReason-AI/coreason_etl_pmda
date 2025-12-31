@@ -8,25 +8,26 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
-import dlt
 import pytest
-
 from coreason_etl_pmda.sources_review_reports import review_reports_source
 
 
-@pytest.fixture
-def mock_requests_get():
+@pytest.fixture  # type: ignore[misc]
+def mock_requests_get() -> Iterator[MagicMock]:
     with patch("coreason_etl_pmda.sources_review_reports.requests.get") as mock:
         yield mock
 
-@pytest.fixture
-def mock_logger():
+
+@pytest.fixture  # type: ignore[misc]
+def mock_logger() -> Iterator[MagicMock]:
     with patch("coreason_etl_pmda.sources_review_reports.logger") as mock:
         yield mock
 
-def test_review_reports_source_extraction(mock_requests_get):
+
+def test_review_reports_source_extraction(mock_requests_get: MagicMock) -> None:
     """Test extracting PDF links and downloading them."""
 
     # Mock Main Page
@@ -65,7 +66,7 @@ def test_review_reports_source_extraction(mock_requests_get):
     mock_pdf2 = MagicMock()
     mock_pdf2.content = b"%PDF-1.4 ... Part 2"
 
-    def get_side_effect(url, *args, **kwargs):
+    def get_side_effect(url: str, *args: list[object], **kwargs: dict[str, object]) -> MagicMock:
         if url.endswith("0001.html"):
             return mock_main_resp
         if "report1.pdf" in url:
@@ -91,7 +92,8 @@ def test_review_reports_source_extraction(mock_requests_get):
     assert item2["source_id"].endswith("report2.pdf")
     assert item2["raw_payload"]["part_index"] == 2
 
-def test_review_reports_source_deduplication(mock_requests_get):
+
+def test_review_reports_source_deduplication(mock_requests_get: MagicMock) -> None:
     """Test deduplication logic using dlt state."""
 
     # Mock Main Page with one PDF
@@ -119,7 +121,7 @@ def test_review_reports_source_deduplication(mock_requests_get):
     mock_pdf = MagicMock()
     mock_pdf.content = b"PDF"
 
-    def get_side_effect(url, *args, **kwargs):
+    def get_side_effect(url: str, *args: list[object], **kwargs: dict[str, object]) -> MagicMock:
         if url.endswith("0001.html"):
             return mock_main_resp
         if "report1.pdf" in url:
@@ -141,18 +143,13 @@ def test_review_reports_source_deduplication(mock_requests_get):
         assert len(data) == 0
 
         # Verify requests.get was NOT called for PDF (only main page)
-        # Main page called once.
-        # PDF url called?
-        # mock_requests_get.assert_called_with(...)
-        # But verify count.
-
-        # Check call args
         calls = mock_requests_get.call_args_list
         # Should contain main url, but NOT report1.pdf
         assert any("0001.html" in str(c) for c in calls)
         assert not any("report1.pdf" in str(c) for c in calls)
 
-def test_review_reports_source_no_table(mock_requests_get):
+
+def test_review_reports_source_no_table(mock_requests_get: MagicMock) -> None:
     """Test when no table matches headers."""
     html = """
     <html>
@@ -172,7 +169,8 @@ def test_review_reports_source_no_table(mock_requests_get):
 
     assert len(data) == 0
 
-def test_review_reports_source_download_error(mock_requests_get):
+
+def test_review_reports_source_download_error(mock_requests_get: MagicMock) -> None:
     """Test error handling during PDF download."""
     html = """
     <html>
@@ -187,7 +185,7 @@ def test_review_reports_source_download_error(mock_requests_get):
     mock_main = MagicMock()
     mock_main.content = html.encode("utf-8")
 
-    def get_side_effect(url, *args, **kwargs):
+    def get_side_effect(url: str, *args: list[object], **kwargs: dict[str, object]) -> MagicMock:
         if "0001.html" in url:
             return mock_main
         if "error.pdf" in url:
@@ -201,7 +199,8 @@ def test_review_reports_source_download_error(mock_requests_get):
 
     assert len(data) == 0
 
-def test_review_reports_source_missing_report_column(mock_requests_get, mock_logger):
+
+def test_review_reports_source_missing_report_column(mock_requests_get: MagicMock, mock_logger: MagicMock) -> None:
     """Test when table matches keywords but missing report column."""
     # Matches: 販売名, 一般的名称. But report column missing.
     html = """
@@ -223,7 +222,8 @@ def test_review_reports_source_missing_report_column(mock_requests_get, mock_log
     # Assert logger warning called
     mock_logger.warning.assert_called_with("Could not find required columns in table.")
 
-def test_review_reports_source_missing_brand_column(mock_requests_get, mock_logger):
+
+def test_review_reports_source_missing_brand_column(mock_requests_get: MagicMock, mock_logger: MagicMock) -> None:
     """Test when table matches keywords but missing brand column."""
     # Matches: 審査報告書, 一般的名称. But brand column missing.
     html = """
@@ -244,7 +244,8 @@ def test_review_reports_source_missing_brand_column(mock_requests_get, mock_logg
     assert len(data) == 0
     mock_logger.warning.assert_called_with("Could not find required columns in table.")
 
-def test_review_reports_source_row_missing_cells(mock_requests_get):
+
+def test_review_reports_source_row_missing_cells(mock_requests_get: MagicMock) -> None:
     """Test row with insufficient cells."""
     html = """
     <html>
@@ -265,7 +266,8 @@ def test_review_reports_source_row_missing_cells(mock_requests_get):
     data = list(source)
     assert len(data) == 0
 
-def test_review_reports_source_row_no_links(mock_requests_get):
+
+def test_review_reports_source_row_no_links(mock_requests_get: MagicMock) -> None:
     """Test row with report cell but no links."""
     html = """
     <html>
@@ -285,7 +287,8 @@ def test_review_reports_source_row_no_links(mock_requests_get):
     data = list(source)
     assert len(data) == 0
 
-def test_review_reports_source_ignore_non_pdf(mock_requests_get):
+
+def test_review_reports_source_ignore_non_pdf(mock_requests_get: MagicMock) -> None:
     """Test ignoring non-pdf links."""
     html = """
     <html>
@@ -305,7 +308,8 @@ def test_review_reports_source_ignore_non_pdf(mock_requests_get):
     data = list(source)
     assert len(data) == 0
 
-def test_review_reports_source_empty_table(mock_requests_get):
+
+def test_review_reports_source_empty_table(mock_requests_get: MagicMock) -> None:
     """Test table with no rows."""
     html = """
     <html>

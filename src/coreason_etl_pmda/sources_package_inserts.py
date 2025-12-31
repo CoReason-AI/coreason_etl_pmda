@@ -9,11 +9,13 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 import time
+from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from urllib.parse import urljoin
 
 import dlt
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
 from dlt.sources.helpers import requests
 
 from coreason_etl_pmda.utils_logger import logger
@@ -54,8 +56,8 @@ def package_inserts_source(
         "updateDocFrDt": start_date,
         "updateDocToDt": end_date,
         "relationDoc1check1": "on",  # Package Insert (添付文書)
-        "ListRows": "100",           # Maximize rows
-        "action:search": "検索",     # Submit button
+        "ListRows": "100",  # Maximize rows
+        "action:search": "検索",  # Submit button
     }
 
     # Perform Search
@@ -89,7 +91,7 @@ def package_inserts_source(
                     try:
                         yield from _process_detail_page(session, full_url)
                         found_on_page += 1
-                        time.sleep(1.0) # Rate limit
+                        time.sleep(1.0)  # Rate limit
                     except Exception:
                         logger.exception(f"Failed to process detail page: {full_url}")
 
@@ -109,7 +111,8 @@ def package_inserts_source(
         else:
             break
 
-def _process_detail_page(session: requests.Session, url: str):
+
+def _process_detail_page(session: requests.Session, url: str) -> Generator[dict[str, Any], None, None]:
     """
     Fetches the drug detail page and extracts the Package Insert content (SGML/XML/HTML).
     """
@@ -121,17 +124,19 @@ def _process_detail_page(session: requests.Session, url: str):
 
     # Priority: XML > SGML > HTML
     for ext in ["xml", "sgml", "html"]:
-        link = soup.find("a", href=lambda h: h and h.lower().endswith(f".{ext}"))
+        # Fix B023: Bind ext=ext
+        link = soup.find("a", href=lambda h, ext=ext: h and h.lower().endswith(f".{ext}"))
         if link:
             target_link = link["href"]
             break
 
     if not target_link:
         for keyword in ["XML", "SGML", "HTML", "添付文書"]:
-             link = soup.find("a", string=lambda t: t and keyword in t)
-             if link:
-                 target_link = link["href"]
-                 break
+            # Fix B023: Bind keyword=keyword
+            link = soup.find("a", string=lambda t, keyword=keyword: t and keyword in t)
+            if link:
+                target_link = link["href"]
+                break
 
     if target_link:
         full_target_url = urljoin(url, target_link)
@@ -149,8 +154,8 @@ def _process_detail_page(session: requests.Session, url: str):
             "ingestion_ts": datetime.now(timezone.utc),
             "original_encoding": encoding,
             "raw_payload": {
-                "content": content_bytes, # DLT handles bytes
+                "content": content_bytes,  # DLT handles bytes
                 "source_url": url,
-                "content_url": full_target_url
-            }
+                "content_url": full_target_url,
+            },
         }
