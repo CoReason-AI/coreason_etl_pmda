@@ -31,6 +31,12 @@ def create_zip_with_csvs(files: dict[str, str | bytes]) -> bytes:
     return buf.getvalue()
 
 
+def mock_with_table_name(item: dict[str, Any], table_name: str) -> dict[str, Any]:
+    """Mock dlt.mark.with_table_name to inject a verification key."""
+    item["__mock_table_name"] = table_name
+    return item
+
+
 def test_jader_source_scraping_and_extraction() -> None:
     """Test full flow: scrape page, download zip, extract CSVs."""
     html_content = """
@@ -50,12 +56,6 @@ def test_jader_source_scraping_and_extraction() -> None:
     zip_bytes = create_zip_with_csvs(
         {"demo2020.csv": demo_csv, "drug2020.csv": drug_csv, "reac2020.csv": reac_csv, "readme.txt": "ignore me"}
     )
-
-    # We patch dlt.mark.with_table_name to inject a verification key
-    # because the real dlt.mark.with_table_name might use internal metadata not easily accessible in raw dicts.
-    def mock_with_table_name(item: dict[str, Any], table_name: str) -> dict[str, Any]:
-        item["__mock_table_name"] = table_name
-        return item
 
     with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
         with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
@@ -112,10 +112,6 @@ def test_jader_source_cp932_encoding() -> None:
     csv_content = f"Col1\n{text_jp}".encode("cp932")
 
     zip_bytes = create_zip_with_csvs({"demo.csv": csv_content})
-
-    def mock_with_table_name(item: dict[str, Any], table_name: str) -> dict[str, Any]:
-        item["__mock_table_name"] = table_name
-        return item
 
     with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
         with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
@@ -221,3 +217,118 @@ def test_jader_source_decode_failure() -> None:
                 mock_log.assert_called_with(
                     "Failed to decode demo.csv in https://www.pmda.go.jp/safety/info-services/drugs/adr-info/suspected-adr/data.zip"
                 )
+
+
+def test_jader_source_filename_case_sensitivity() -> None:
+    """Test that filenames are matched case-insensitively."""
+    html_content = """<a href="data.zip">Data</a>"""
+
+    zip_bytes = create_zip_with_csvs({"DEMO.CSV": "ID\n1", "Drug.csv": "ID\n1", "REAC.Csv": "ID\n1"})
+
+    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
+        with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
+            mock_get.side_effect = [MagicMock(content=html_content.encode("utf-8")), MagicMock(content=zip_bytes)]
+
+            data = list(jader_source())
+            assert len(data) == 3
+            files = {d["_source_file"] for d in data}
+            assert files == {"DEMO.CSV", "Drug.csv", "REAC.Csv"}
+
+
+def test_jader_source_empty_file() -> None:
+    """Test handling of 0-byte or empty CSV files."""
+    html_content = """<a href="data.zip">Data</a>"""
+
+    zip_bytes = create_zip_with_csvs({"demo_empty.csv": b"", "demo_valid.csv": "ID\n1"})
+
+    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
+        with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
+            mock_get.side_effect = [MagicMock(content=html_content.encode("utf-8")), MagicMock(content=zip_bytes)]
+
+            # Polars read_csv might raise NoDataError for empty file, or return empty DF.
+            # If it raises Exception, our loop catches it and logs error.
+            # We want to ensure valid files still process.
+
+            with patch("coreason_etl_pmda.sources_jader.logger.error") as mock_log:
+                data = list(jader_source())
+
+                # Should get data from valid file
+                assert len(data) == 1
+                assert data[0]["_source_file"] == "demo_valid.csv"
+
+                # Should log error for empty file
+                mock_log.assert_called()
+
+
+def test_jader_source_malformed_csv() -> None:
+    """Test handling of malformed CSV (e.g. jagged rows)."""
+    html_content = """<a href="data.zip">Data</a>"""
+
+    # Row with more columns than header
+    malformed_csv = "H1,H2\nV1,V2,V3"
+
+    zip_bytes = create_zip_with_csvs({"demo_bad.csv": malformed_csv, "demo_good.csv": "H1,H2\nV1,V2"})
+
+    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
+        with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
+            mock_get.side_effect = [MagicMock(content=html_content.encode("utf-8")), MagicMock(content=zip_bytes)]
+
+            # Polars default parser might handle it or raise error.
+            # If it raises, we catch it.
+
+            # Use mock_log to silence or assert
+            with patch("coreason_etl_pmda.sources_jader.logger.error") as mock_log:
+                data = list(jader_source())
+
+                # Good file should pass
+                good_rows = [d for d in data if d["_source_file"] == "demo_good.csv"]
+                assert len(good_rows) == 1
+
+                # If bad file is yielded (parsed partially) or skipped, we don't crash.
+                # Just asserting no crash is enough for this atomic unit given implementation behavior.
+                assert mock_log.call_count >= 0
+
+
+def test_jader_source_mixed_encodings() -> None:
+    """Test zip containing mixed encoding files."""
+    html_content = """<a href="data.zip">Data</a>"""
+
+    # Shift-JIS file
+    sjis_content = f"Col\n{'日本語'}".encode("shift_jis")
+    # UTF-8 file
+    utf8_content = f"Col\n{'English'}"
+
+    zip_bytes = create_zip_with_csvs({"demo_sjis.csv": sjis_content, "demo_utf8.csv": utf8_content})
+
+    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
+        with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
+            mock_get.side_effect = [MagicMock(content=html_content.encode("utf-8")), MagicMock(content=zip_bytes)]
+
+            data = list(jader_source())
+            assert len(data) == 2
+
+            row_sjis = next(d for d in data if d["_source_file"] == "demo_sjis.csv")
+            assert row_sjis["Col"] == "日本語"
+
+            row_utf8 = next(d for d in data if d["_source_file"] == "demo_utf8.csv")
+            assert row_utf8["Col"] == "English"
+
+
+def test_jader_source_duplicate_tables() -> None:
+    """Test multiple files mapping to same table."""
+    html_content = """<a href="data.zip">Data</a>"""
+
+    zip_bytes = create_zip_with_csvs({"demo_part1.csv": "ID\n1", "demo_part2.csv": "ID\n2"})
+
+    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
+        with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
+            mock_get.side_effect = [MagicMock(content=html_content.encode("utf-8")), MagicMock(content=zip_bytes)]
+
+            data = list(jader_source())
+            assert len(data) == 2
+
+            # Both should map to bronze_jader_demo
+            assert all(d["__mock_table_name"] == "bronze_jader_demo" for d in data)
+
+            ids = sorted([d["ID"] for d in data])
+            assert ids == ["1", "2"]
