@@ -64,3 +64,27 @@ def test_convert_japanese_date_invalid() -> None:
     assert convert_japanese_date_to_iso("Invalid") is None
     assert convert_japanese_date_to_iso("Reiwa 99.99.99") is None  # Invalid date
     assert convert_japanese_date_to_iso("") is None
+
+
+def test_convert_japanese_date_full_width() -> None:
+    # Full-width numbers
+    assert convert_japanese_date_to_iso("令和２年５月１日") == "2020-05-01"
+    assert convert_japanese_date_to_iso("令和２年１０月１０日") == "2020-10-10"
+
+
+def test_convert_japanese_date_leap_year() -> None:
+    # 2020 (Reiwa 2) was a leap year
+    assert convert_japanese_date_to_iso("Reiwa 2.2.29") == "2020-02-29"
+    # 2021 (Reiwa 3) was NOT a leap year
+    assert convert_japanese_date_to_iso("Reiwa 3.2.29") is None
+
+
+def test_convert_japanese_date_embedded_text() -> None:
+    # Date embedded in other text
+    assert convert_japanese_date_to_iso("Approved on Reiwa 2.5.1") == "2020-05-01"
+    assert convert_japanese_date_to_iso("Approval Date: 令和2年5月1日") == "2020-05-01"
+
+
+def test_convert_japanese_date_mixed_separators() -> None:
+    assert convert_japanese_date_to_iso("Reiwa 2-5/1") == "2020-05-01"
+    assert convert_japanese_date_to_iso("R2/5.1") == "2020-05-01"
