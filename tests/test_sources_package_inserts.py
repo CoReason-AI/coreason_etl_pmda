@@ -329,10 +329,8 @@ def test_package_inserts_encoding_fallback(mock_requests_session: MagicMock) -> 
     mock_content = MockResponse(content=b"Binary Content", encoding=None)
 
     def get_side_effect(url: str, *args: list[object], **kwargs: dict[str, object]) -> object:
-        # Check for specific content URL FIRST
         if "doc.xml" in url:
             return mock_content
-        # Then check for detail page (which is a prefix/substring)
         if "iyakuDetail" in url:
             return mock_detail
         return MagicMock()
@@ -378,7 +376,7 @@ def test_package_inserts_detail_malformed(mock_requests_session: MagicMock) -> N
 
     # Detail page with NO valid links
     mock_detail = MagicMock()
-    mock_detail.content = b'<html><body>No links here</body></html>'
+    mock_detail.content = b"<html><body>No links here</body></html>"
 
     def get_side_effect(url: str, *args: list[object], **kwargs: dict[str, object]) -> MagicMock:
         if "iyakuDetail" in url:
@@ -392,3 +390,53 @@ def test_package_inserts_detail_malformed(mock_requests_session: MagicMock) -> N
 
     # Should gracefully skip this item and yield nothing
     assert len(data) == 0
+
+
+def test_package_inserts_pagination_error(mock_requests_session: MagicMock) -> None:
+    """Test handling when the next page request fails."""
+    session_instance = mock_requests_session.return_value
+
+    # Page 1 HTML (with Next link)
+    page1_html = """
+    <html>
+        <body>
+            <table>
+                <tr><td><a href="/PmdaSearch/iyakuDetail/GeneralList/1">Item 1</a></td></tr>
+            </table>
+            <a href="/PmdaSearch/iyakuSearch/page2">次へ</a>
+        </body>
+    </html>
+    """
+
+    mock_page1 = MagicMock()
+    mock_page1.content = page1_html.encode("utf-8")
+    mock_page1.text = "Results"
+    session_instance.post.return_value = mock_page1
+
+    # Mock Detail/Content (Generic)
+    mock_detail = MagicMock()
+    mock_detail.content = b'<html><a href="doc.xml">XML</a></html>'
+    mock_content = MagicMock()
+    mock_content.content = b"XML Content"
+
+    def get_side_effect(url: str, *args: list[object], **kwargs: dict[str, object]) -> MagicMock:
+        if "page2" in url:
+            raise Exception("Pagination Error")
+        if "iyakuDetail" in url:
+            return mock_detail
+        if "doc.xml" in url:
+            return mock_content
+        return MagicMock()
+
+    session_instance.get.side_effect = get_side_effect
+
+    source = package_inserts_source()
+
+    # Should yield page 1 item then raise exception
+    # Since dlt generator yields items, consuming it should raise eventually
+    gen = iter(source)
+    item = next(gen)
+    assert item["source_id"].endswith("doc.xml")
+
+    with pytest.raises(Exception, match="Pagination Error"):
+        next(gen)
