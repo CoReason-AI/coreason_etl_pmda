@@ -234,3 +234,105 @@ def test_package_inserts_error_handling(mock_requests_session: MagicMock) -> Non
 
     # Should yield 0 items but not crash
     assert len(data) == 0
+
+
+def test_package_inserts_priority_logic(mock_requests_session: MagicMock) -> None:
+    """Test link selection priority (XML > SGML > HTML)."""
+    session_instance = mock_requests_session.return_value
+
+    # Search result
+    mock_search_resp = MagicMock()
+    mock_search_resp.text = "Results found"
+    mock_search_resp.content = (
+        b'<html><table><tr><td><a href="/PmdaSearch/iyakuDetail/GeneralList/1">Detail</a></td></tr></table></html>'
+    )
+    session_instance.post.return_value = mock_search_resp
+
+    # Detail page with all types
+    # Case 1: XML exists
+    detail_html_all = """
+    <html>
+        <body>
+            <a href="doc.html">HTML</a>
+            <a href="doc.xml">XML</a>
+            <a href="doc.sgml">SGML</a>
+        </body>
+    </html>
+    """
+    mock_detail_all = MagicMock()
+    mock_detail_all.content = detail_html_all.encode("utf-8")
+
+    # Content responses
+    mock_content = MagicMock()
+    mock_content.content = b"Content"
+
+    def get_side_effect_all(url: str, *args: list[object], **kwargs: dict[str, object]) -> MagicMock:
+        if "iyakuDetail" in url:
+            return mock_detail_all
+        return mock_content
+
+    session_instance.get.side_effect = get_side_effect_all
+
+    source = package_inserts_source()
+    data = list(source)
+    assert len(data) == 1
+    assert data[0]["source_id"].endswith(".xml")
+
+    # Case 2: No XML, only SGML and HTML
+    detail_html_sgml = """
+    <html>
+        <body>
+            <a href="doc.html">HTML</a>
+            <a href="doc.sgml">SGML</a>
+        </body>
+    </html>
+    """
+    mock_detail_sgml = MagicMock()
+    mock_detail_sgml.content = detail_html_sgml.encode("utf-8")
+
+    def get_side_effect_sgml(url: str, *args: list[object], **kwargs: dict[str, object]) -> MagicMock:
+        if "iyakuDetail" in url:
+            return mock_detail_sgml
+        return mock_content
+
+    session_instance.get.side_effect = get_side_effect_sgml
+    # Need to reset generator or re-init source
+    source = package_inserts_source()
+    data = list(source)
+    assert len(data) == 1
+    assert data[0]["source_id"].endswith(".sgml")
+
+
+def test_package_inserts_encoding_fallback(mock_requests_session: MagicMock) -> None:
+    """Test handling when response.encoding is None."""
+    session_instance = mock_requests_session.return_value
+
+    mock_search_resp = MagicMock()
+    mock_search_resp.text = "Results"
+    mock_search_resp.content = (
+        b'<html><table><tr><td><a href="/PmdaSearch/iyakuDetail/GeneralList/1">Detail</a></td></tr></table></html>'
+    )
+    session_instance.post.return_value = mock_search_resp
+
+    mock_detail = MagicMock()
+    mock_detail.content = b'<html><a href="doc.xml">XML</a></html>'
+
+    mock_content = MagicMock()
+    mock_content.content = b"Binary Content"
+    mock_content.encoding = None  # Simulate missing encoding
+
+    def get_side_effect(url: str, *args: list[object], **kwargs: dict[str, object]) -> MagicMock:
+        if "iyakuDetail" in url:
+            return mock_detail
+        if "doc.xml" in url:
+            return mock_content
+        return MagicMock()
+
+    session_instance.get.side_effect = get_side_effect
+
+    source = package_inserts_source()
+    data = list(source)
+
+    assert len(data) == 1
+    assert data[0]["original_encoding"] == "utf-8"  # Should fallback to utf-8
+    assert data[0]["raw_payload"]["content"] == b"Binary Content"
