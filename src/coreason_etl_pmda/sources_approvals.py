@@ -9,6 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 import re
+from datetime import datetime, timezone
 from urllib.parse import urljoin
 
 import dlt
@@ -36,7 +37,8 @@ def approvals_source(
     - Find tables.
     - Match headers using Japanese keywords.
     - Extract: 承認年月日 (Approval Date), 販売名 (Brand Name), 一般的名称 (Generic Name), 申請者氏名 (Applicant).
-    - Yield dicts.
+    - Yield dicts wrapped in Envelope Schema.
+      Schema: source_id, ingestion_ts, raw_payload, original_encoding
     """
 
     # Get state
@@ -48,6 +50,7 @@ def approvals_source(
     # PMDA often uses CP932/Shift-JIS, requests might autodetect or we force it if needed.
     # We'll rely on response.encoding or BeautifulSoup's detection.
     soup = BeautifulSoup(response.content, "html.parser")
+    original_encoding = response.encoding or "unknown"
 
     tables = soup.find_all("table")
 
@@ -107,4 +110,11 @@ def approvals_source(
                 if "brand_name_jp" in record:
                     record["review_report_url"] = review_url
                     record["_source_url"] = url
-                    yield record
+
+                    # Wrap in Envelope
+                    yield {
+                        "source_id": url,
+                        "ingestion_ts": datetime.now(timezone.utc),
+                        "original_encoding": original_encoding,
+                        "raw_payload": record,
+                    }
