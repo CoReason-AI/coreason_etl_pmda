@@ -317,15 +317,24 @@ def test_package_inserts_encoding_fallback(mock_requests_session: MagicMock) -> 
     mock_detail = MagicMock()
     mock_detail.content = b'<html><a href="doc.xml">XML</a></html>'
 
-    mock_content = MagicMock()
-    mock_content.content = b"Binary Content"
-    mock_content.encoding = None  # Simulate missing encoding
+    # Use a real class to avoid MagicMock property issues
+    class MockResponse:
+        def __init__(self, content: bytes, encoding: str | None) -> None:
+            self.content = content
+            self.encoding = encoding
 
-    def get_side_effect(url: str, *args: list[object], **kwargs: dict[str, object]) -> MagicMock:
-        if "iyakuDetail" in url:
-            return mock_detail
+        def raise_for_status(self) -> None:
+            pass
+
+    mock_content = MockResponse(content=b"Binary Content", encoding=None)
+
+    def get_side_effect(url: str, *args: list[object], **kwargs: dict[str, object]) -> object:
+        # Check for specific content URL FIRST
         if "doc.xml" in url:
             return mock_content
+        # Then check for detail page (which is a prefix/substring)
+        if "iyakuDetail" in url:
+            return mock_detail
         return MagicMock()
 
     session_instance.get.side_effect = get_side_effect
@@ -336,3 +345,50 @@ def test_package_inserts_encoding_fallback(mock_requests_session: MagicMock) -> 
     assert len(data) == 1
     assert data[0]["original_encoding"] == "utf-8"  # Should fallback to utf-8
     assert data[0]["raw_payload"]["content"] == b"Binary Content"
+
+
+def test_package_inserts_search_error(mock_requests_session: MagicMock) -> None:
+    """Test handling when the initial search POST request fails."""
+    session_instance = mock_requests_session.return_value
+
+    # Simulate exception on post
+    session_instance.post.side_effect = Exception("Search Connection Error")
+
+    source = package_inserts_source()
+
+    # Expectation: dlt sources usually raise the exception unless handled.
+    # The source code does `response.raise_for_status()` which would raise.
+    # But here we raise Exception directly from post.
+    # The code doesn't wrap the post in try/except, so it should propagate.
+
+    with pytest.raises(Exception, match="Search Connection Error"):
+        list(source)
+
+
+def test_package_inserts_detail_malformed(mock_requests_session: MagicMock) -> None:
+    """Test handling of detail page with no valid links."""
+    session_instance = mock_requests_session.return_value
+
+    mock_search_resp = MagicMock()
+    mock_search_resp.text = "Results"
+    mock_search_resp.content = (
+        b'<html><table><tr><td><a href="/PmdaSearch/iyakuDetail/GeneralList/1">Detail</a></td></tr></table></html>'
+    )
+    session_instance.post.return_value = mock_search_resp
+
+    # Detail page with NO valid links
+    mock_detail = MagicMock()
+    mock_detail.content = b'<html><body>No links here</body></html>'
+
+    def get_side_effect(url: str, *args: list[object], **kwargs: dict[str, object]) -> MagicMock:
+        if "iyakuDetail" in url:
+            return mock_detail
+        return MagicMock()
+
+    session_instance.get.side_effect = get_side_effect
+
+    source = package_inserts_source()
+    data = list(source)
+
+    # Should gracefully skip this item and yield nothing
+    assert len(data) == 0
