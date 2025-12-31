@@ -16,6 +16,8 @@ import dlt
 from coreason_etl_pmda.sources_approvals import approvals_source
 from coreason_etl_pmda.sources_jader import jader_source
 from coreason_etl_pmda.sources_jan import jan_inn_source
+from coreason_etl_pmda.sources_package_inserts import package_inserts_source
+from coreason_etl_pmda.sources_review_reports import review_reports_source
 from coreason_etl_pmda.utils_logger import logger
 
 # Note: Silver/Gold transformations are usually done via dlt transformer or DBT.
@@ -70,7 +72,13 @@ def run_bronze_pipeline(
 
     # Run sources
     # We use list to ensure all run
-    sources = [jan_inn_source(), approvals_source(), jader_source()]
+    sources = [
+        jan_inn_source(),
+        approvals_source(),
+        jader_source(),
+        package_inserts_source(),
+        review_reports_source(),
+    ]
 
     info = p.run(sources)
     logger.info(info)
