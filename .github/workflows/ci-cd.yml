@@ -54,7 +54,8 @@ jobs:
         run: pipx install poetry
         shell: bash
 
-      - name: Configure Poetry
+      - name: Configure Poetry (Windows)
+        if: runner.os == 'Windows'
         run: poetry config virtualenvs.create false
         shell: bash
 
@@ -100,10 +101,6 @@ jobs:
 
       - name: Install Poetry
         run: pipx install poetry
-        shell: bash
-
-      - name: Configure Poetry
-        run: poetry config virtualenvs.create false
         shell: bash
 
       - name: Install dependencies
