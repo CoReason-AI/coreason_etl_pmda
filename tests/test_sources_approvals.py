@@ -78,11 +78,38 @@ def test_approvals_source_scraping_japanese() -> None:
         assert payload1["approval_date"] == "令和2年1月1日"
         assert payload1["review_report_url"] == "http://example.com/report_a.pdf"
         assert payload1["indication"] == "効能A"
+        assert payload1["application_type"] == "New Drug"  # Default
 
         # Row 2
         payload2 = data[1]["raw_payload"]
         assert payload2["brand_name_jp"] == "ブランドB"
         assert payload2["review_report_url"] is None
+        assert payload2["application_type"] == "New Drug"
+
+
+def test_approvals_source_application_type_override() -> None:
+    html_content = """
+    <html>
+        <body>
+            <table>
+                <tr><th>販売名</th><th>一般的名称</th><th>承認年月日</th></tr>
+                <tr><td>BrandG</td><td>GenG</td><td>R2.1.1</td></tr>
+            </table>
+        </body>
+    </html>
+    """
+    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.content = html_content.encode("utf-8")
+        mock_resp.encoding = "utf-8"
+        mock_get.return_value = mock_resp
+
+        # Override application_type
+        resource = approvals_source(url="http://example.com/generic", application_type="Generic")
+        data = list(resource)
+
+        assert len(data) == 1
+        assert data[0]["raw_payload"]["application_type"] == "Generic"
 
 
 def test_approvals_source_whitespace_japanese() -> None:
