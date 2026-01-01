@@ -51,7 +51,7 @@ jobs:
             v1-${{ runner.os }}-python-${{ matrix.python-version }}-
 
       - name: Install Poetry
-        run: pipx install poetry
+        run: pip install poetry
         shell: bash
 
       - name: Configure Poetry (Windows)
