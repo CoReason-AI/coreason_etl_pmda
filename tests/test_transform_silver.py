@@ -61,6 +61,7 @@ def test_normalize_approvals_renaming(sample_approvals_raw: pl.DataFrame) -> Non
         "applicant_name_jp",
         "indication",
         "coreason_id",
+        "application_type",  # Added
     ]
     for col in expected_cols:
         assert col in df.columns
@@ -100,12 +101,14 @@ def test_normalize_approvals_text_normalization() -> None:
     data = {
         "販売名": ["ﾃｽﾄ"],  # "Test" in half-width
         "承認番号": ["123 "],  # Trim
+        "application_type": ["New Drug"],
     }
     df = pl.DataFrame(data)
     normalized = normalize_approvals(df)
 
     assert normalized["brand_name_jp"][0] == "テスト"
     assert normalized["approval_id"][0] == "123"
+    assert normalized["application_type"][0] == "New Drug"
 
 
 def test_jan_bridge_lookup(sample_approvals_raw: pl.DataFrame, sample_jan_ref: pl.DataFrame) -> None:

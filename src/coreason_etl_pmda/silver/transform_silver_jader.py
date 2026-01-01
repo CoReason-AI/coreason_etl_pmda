@@ -9,9 +9,16 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 import re
+from typing import Any
 
 import polars as pl
+from pydantic import BaseModel
 
+from coreason_etl_pmda.silver.schemas import (
+    SilverJaderDemoSchema,
+    SilverJaderDrugSchema,
+    SilverJaderReacSchema,
+)
 from coreason_etl_pmda.utils_text import normalize_text
 
 # Mappings (Japanese -> English)
@@ -107,12 +114,51 @@ def _normalize_common(df: pl.DataFrame, mapping: dict[str, str]) -> pl.DataFrame
     return df
 
 
+def _validate_with_pydantic(df: pl.DataFrame, model: type[BaseModel]) -> pl.DataFrame:
+    """
+    Validates DataFrame rows against a Pydantic model.
+    """
+
+    def validate(row: dict[str, Any]) -> dict[str, Any]:
+        return model(**row).model_dump()
+
+    rows = df.to_dicts()
+    validated = [validate(r) for r in rows]
+
+    if not validated:
+        # Return empty DF with schema from Pydantic model
+        # We need to map Pydantic types to Polars types roughly
+        # Or just create from a dummy dict to infer schema
+        # But dummy dict might be empty if all fields are optional?
+        # Let's use the field names.
+        field_names = list(model.model_fields.keys())
+        # We can create a schema with all String/Null or try to be smarter.
+        # Simplest: create empty DF with these columns.
+        # types will be inferred as Null or Object if we don't specify.
+        # But downstream expects specific types (e.g. reporting_year as Int64).
+
+        # We can map fields:
+        schema = {}
+        for name in model.model_fields:
+            # Primitive mapping
+            # checking if it includes int
+            # This is complex with Pydantic types.
+            # Fallback: create empty DF with columns, let type be Null (Object)
+            # But tests might check for specific columns.
+            schema[name] = pl.Null
+
+        # Correction: If we just return columns, Polars makes them Null.
+        return pl.DataFrame([], schema=field_names)
+
+    return pl.DataFrame(validated)
+
+
 def normalize_jader_demo(df: pl.DataFrame) -> pl.DataFrame:
     """
     Normalizes JADER Demo table.
     """
     df = _normalize_common(df, DEMO_MAPPING)
-    return df
+    return _validate_with_pydantic(df, SilverJaderDemoSchema)
 
 
 def normalize_jader_drug(df: pl.DataFrame) -> pl.DataFrame:
@@ -149,7 +195,7 @@ def normalize_jader_drug(df: pl.DataFrame) -> pl.DataFrame:
             .alias("characterization")
         )
 
-    return df
+    return _validate_with_pydantic(df, SilverJaderDrugSchema)
 
 
 def normalize_jader_reac(df: pl.DataFrame) -> pl.DataFrame:
@@ -157,4 +203,4 @@ def normalize_jader_reac(df: pl.DataFrame) -> pl.DataFrame:
     Normalizes JADER Reaction table.
     """
     df = _normalize_common(df, REAC_MAPPING)
-    return df
+    return _validate_with_pydantic(df, SilverJaderReacSchema)

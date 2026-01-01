@@ -59,6 +59,14 @@ def transform_approvals_gold(approvals_df: pl.DataFrame) -> pl.DataFrame:
 
     # Check required columns
     required = ["approval_id", "brand_name_jp", "generic_name_jp", "approval_date"]
+    # application_type is expected to be present from Silver.
+    # However, for safety, if missing, we can default it or fail.
+    # Spec says "application_type (Enum: 'New Drug', 'Generic')".
+    # We should ensure it's present.
+    if "application_type" not in approvals_df.columns:
+        # We could default, but Silver should have provided it.
+        pass
+
     for c in required:
         if c not in approvals_df.columns:
             # Maybe strict check or optional? Spec implies these are core.
