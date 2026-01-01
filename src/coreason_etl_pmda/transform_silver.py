@@ -15,6 +15,7 @@ from typing import Any
 import polars as pl
 import requests
 
+from coreason_etl_pmda.silver.schemas import SilverApprovalSchema
 from coreason_etl_pmda.utils_date import convert_japanese_date_to_iso
 from coreason_etl_pmda.utils_text import normalize_text
 
@@ -55,6 +56,14 @@ def normalize_approvals(df: pl.DataFrame) -> pl.DataFrame:
     # Let's ensure they exist.
 
     expected_cols = list(COLUMN_MAPPING.values())
+    # application_type is expected from Bronze but not in mapping (it's already English/Code)
+    if "application_type" not in df.columns:
+        # If missing from source, default or null?
+        # Bronze update ensures it's there. If older data, we might need default.
+        # Let's default to "New Drug" if missing, or null?
+        # Safe to default to None.
+        expected_cols.append("application_type")
+
     for col in expected_cols:
         if col not in df.columns:
             df = df.with_columns(pl.lit(None).cast(pl.String).alias(col))
@@ -105,7 +114,38 @@ def normalize_approvals(df: pl.DataFrame) -> pl.DataFrame:
         .alias("coreason_id")
     )
 
-    return df
+    # 5. Pydantic Validation
+    # We validate the output schema using Pydantic.
+    # We can iterate and validate or use polars schema validation if we strictly typed it,
+    # but requirement is "polars + pydantic".
+    # For performance on large data, doing this row-by-row in python is slow.
+    # But for "100% correctness" and "pydantic" requirement, we do it.
+    # We can skip if data is massive, but here we comply with the protocol.
+
+    def validate_row(row: dict[str, Any]) -> dict[str, Any]:
+        # Filter keys to match schema
+        return SilverApprovalSchema(**row).model_dump()
+
+    # Apply validation (this ensures types and extra fields are ignored/handled)
+    # Note: map_elements on struct returns struct.
+    # We might need to redefine schema.
+    # A simpler way is to just let Pydantic check validity and pass through, or clean data.
+    # Let's clean.
+
+    # To do this efficiently in Polars:
+    # Converting to dicts and back is expensive.
+    # We will assume if it passes the logic above it's mostly fine,
+    # but we will run a check.
+
+    # Implementation:
+    # Convert to python objects, validate, create new DF.
+    # This is the most robust "Pydantic" way.
+
+    rows = df.to_dicts()
+    validated_rows = [validate_row(r) for r in rows]
+
+    # Re-create DataFrame from validated rows to ensure schema compliance
+    return pl.DataFrame(validated_rows)
 
 
 def jan_bridge_lookup(approvals_df: pl.DataFrame, jan_df: pl.DataFrame) -> pl.DataFrame:

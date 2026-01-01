@@ -51,6 +51,7 @@ def test_transform_approvals_gold() -> None:
     # Check Schema
     assert "indication" in row
     assert row["indication"] == "Pain"
+    assert row["application_type"] == "New Drug"
 
 
 def test_transform_approvals_gold_missing_cols() -> None:
@@ -62,6 +63,7 @@ def test_transform_approvals_gold_missing_cols() -> None:
 
 def test_transform_approvals_gold_defaults() -> None:
     # Missing optional columns like 'indication', 'applicant_name_jp'
+    # Also missing 'application_type' -> Should default to None (or be filled as None)
     df = pl.DataFrame(
         {
             "approval_id": ["1"],
@@ -77,4 +79,5 @@ def test_transform_approvals_gold_defaults() -> None:
 
     assert row["indication"] is None
     assert row["applicant_name_jp"] is None
+    assert row["application_type"] is None
     assert row["coreason_id"] is not None

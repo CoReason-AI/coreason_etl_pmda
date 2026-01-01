@@ -26,11 +26,16 @@ from coreason_etl_pmda.utils_logger import logger
 @dlt.resource(name="bronze_approvals", write_disposition="append")  # type: ignore[misc]
 def approvals_source(
     url: str = "https://www.pmda.go.jp/review-services/drug-reviews/review-information/p-drugs/0001.html",
+    application_type: str = "New Drug",
 ) -> dlt.sources.DltSource:
     """
     Ingests PMDA Approvals data (Japanese Source).
     1. Scrapes the Japanese approvals page to find the table of drugs.
     2. Extracts metadata including `review_report_url` (審査報告書) from the HTML table.
+
+    Args:
+        url: The URL to scrape.
+        application_type: "New Drug" or "Generic". Defaults to "New Drug" as the default URL is for P-Drugs.
 
     Refined Logic:
     - Fetch page (handling Shift-JIS or UTF-8).
@@ -44,7 +49,7 @@ def approvals_source(
     # Get state
     _ = dlt.current.source_state()
 
-    logger.info(f"Scraping Approvals from {url}")
+    logger.info(f"Scraping Approvals from {url} (Type: {application_type})")
     response = requests.get(url)
     response.raise_for_status()
     # PMDA often uses CP932/Shift-JIS, requests might autodetect or we force it if needed.
@@ -110,6 +115,7 @@ def approvals_source(
                 if "brand_name_jp" in record:
                     record["review_report_url"] = review_url
                     record["_source_url"] = url
+                    record["application_type"] = application_type
 
                     # Wrap in Envelope
                     yield {

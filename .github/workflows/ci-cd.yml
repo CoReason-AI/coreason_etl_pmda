@@ -51,7 +51,12 @@ jobs:
             v1-${{ runner.os }}-python-${{ matrix.python-version }}-
 
       - name: Install Poetry
-        run: pipx install poetry
+        run: pip install poetry
+        shell: bash
+
+      - name: Configure Poetry (Windows)
+        if: runner.os == 'Windows'
+        run: poetry config virtualenvs.create false
         shell: bash
 
       - name: Install dependencies

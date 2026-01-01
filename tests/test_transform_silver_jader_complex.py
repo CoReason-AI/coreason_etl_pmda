@@ -58,19 +58,15 @@ def test_normalize_jader_reporting_year_types() -> None:
     # Integer year
     df1 = pl.DataFrame({"識別番号": ["1"], "報告年度": [2020]})
     res1 = normalize_jader_demo(df1)
-    # If we don't normalize reporting_year, it keeps original type?
-    # Or do we expect it to be normalized?
-    # The current code only normalizes specific text columns.
-    # reporting_year is NOT in the list of cols_to_normalize in `transform_silver_jader.py`.
-    # So it should remain Int64.
+    # reporting_year should be Int64 as per Schema (int | None)
     assert res1["reporting_year"].dtype == pl.Int64
     assert res1["reporting_year"][0] == 2020
 
-    # String year
+    # String year -> Coerced to Int64 by Pydantic
     df2 = pl.DataFrame({"識別番号": ["1"], "報告年度": ["2020"]})
     res2 = normalize_jader_demo(df2)
-    assert res2["reporting_year"].dtype == pl.String
-    assert res2["reporting_year"][0] == "2020"
+    assert res2["reporting_year"].dtype == pl.Int64
+    assert res2["reporting_year"][0] == 2020
 
 
 def test_normalize_jader_empty_dataframe() -> None:
@@ -84,7 +80,7 @@ def test_normalize_jader_empty_dataframe() -> None:
 
 
 def test_normalize_jader_extra_columns() -> None:
-    # Extra columns should be preserved
+    # Extra columns should be removed by strict Pydantic validation (extra="ignore")
     df = pl.DataFrame(
         {
             "識別番号": ["1"],
@@ -96,8 +92,7 @@ def test_normalize_jader_extra_columns() -> None:
     )
 
     result = normalize_jader_demo(df)
-    assert "ExtraCol" in result.columns
-    assert result["ExtraCol"][0] == "Data"
+    assert "ExtraCol" not in result.columns
 
 
 def test_normalize_jader_dirty_text_normalization() -> None:
