@@ -33,7 +33,7 @@ def jader_source(
     1. Scrapes the page to find Zip files.
     2. Downloads Zip.
     3. Extracts CSVs (demo, drug, reac).
-    4. Yields rows with table identifier.
+    4. Yields Arrow Tables with table identifier for high velocity.
 
     Tables:
     - bronze_jader_demo
@@ -89,9 +89,9 @@ def jader_source(
 
                             for enc in encodings:
                                 try:
-                                    # We use polars directly if possible, but for safety with encodings,
-                                    # decoding to string first might be more reliable if polars fails.
-                                    # However, Polars read_csv has encoding support.
+                                    # We use polars directly.
+                                    # infer_schema_length=0 forces all columns to String,
+                                    # which prevents schema mismatch errors during ingestion of raw data.
                                     df = pl.read_csv(io.BytesIO(content), encoding=enc, infer_schema_length=0)
                                     break
                                 except Exception:
@@ -101,25 +101,21 @@ def jader_source(
                                 logger.error(f"Failed to decode {filename} in {zip_url}")
                                 continue
 
-                            # Normalize headers?
-                            # We keep raw headers in Bronze, but standardizing naming helps.
-                            # For now, yield as is, but ensure string types for safety.
-                            # infer_schema_length=0 forces all columns to String (mostly),
-                            # which prevents schema mismatch errors during ingestion of raw data.
-
                             ingestion_ts = datetime.now(timezone.utc)
 
-                            for row in df.iter_rows(named=True):
-                                record = row.copy()
-                                record["_source_file"] = filename
-                                record["_source_zip"] = zip_url
-                                record["_ingestion_ts"] = ingestion_ts
-                                yield dlt.mark.with_table_name(record, table_name)
+                            # Vectorized addition of metadata columns
+                            df = df.with_columns(
+                                [
+                                    pl.lit(filename).alias("_source_file"),
+                                    pl.lit(zip_url).alias("_source_zip"),
+                                    pl.lit(ingestion_ts).alias("_ingestion_ts"),
+                                ]
+                            )
+
+                            # Yield Arrow Table wrapped in dlt marker
+                            # Convert to Arrow Table
+                            arrow_table = df.to_arrow()
+                            yield dlt.mark.with_table_name(arrow_table, table_name)
 
         except Exception as e:
             logger.exception(f"Failed to process JADER zip {zip_url}: {e}")
-            # We don't stop the whole pipeline for one bad zip, but we log it.
-            # If it's critical, we might want to raise.
-            # Given "Completeness: 100% capture", a failure here is bad.
-            # But iterating over all zips implies some might be historical/duplicate.
-            # We'll continue but the logs will show errors.
