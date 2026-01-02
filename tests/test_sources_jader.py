@@ -13,8 +13,6 @@ import zipfile
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import polars as pl
-import pyarrow as pa
 import pytest
 from coreason_etl_pmda.sources_jader import jader_source
 from dlt.extract.exceptions import ResourceExtractionError
