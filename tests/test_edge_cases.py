@@ -53,7 +53,9 @@ def test_jader_orphan_records() -> None:
     reac = pl.DataFrame({"id": ["2"], "reaction": ["R1"]})  # ID mismatch
 
     result = transform_jader_gold(demo, drug, reac)
-    assert len(result) == 0
+    # Should keep the row with null reaction (Left Join)
+    assert len(result) == 1
+    assert result["reaction_pt"][0] is None
 
 
 def test_jader_case_sensitivity() -> None:
@@ -124,7 +126,7 @@ def test_jader_complex_cartesian_explosion() -> None:
 
     result = transform_jader_gold(demo, drug, reac)
 
-    assert len(result) == 7  # 1 (A) + 6 (B) + 0 (C) + 0 (D)
+    assert len(result) == 8  # 1 (A) + 6 (B) + 0 (C) + 1 (D)
 
     # Verify Case B
     case_b = result.filter(pl.col("case_id") == "B").sort(["primary_suspect_drug", "reaction_pt"])
