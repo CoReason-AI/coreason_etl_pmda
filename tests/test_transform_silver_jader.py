@@ -101,3 +101,14 @@ def test_normalize_jader_half_width_normalization() -> None:
 
     result = normalize_jader_reac(df)
     assert result["reaction"][0] == "アナフィラキシー"
+
+
+def test_normalize_jader_empty_dataframe() -> None:
+    # Test handling of empty DataFrame
+    # Must specify types, otherwise they are Null and string ops fail
+    df = pl.DataFrame(schema={"識別番号": pl.String, "性別": pl.String})
+    result = normalize_jader_demo(df)
+    assert len(result) == 0
+    # Check that schema matches output schema (roughly)
+    assert "id" in result.columns
+    assert "sex" in result.columns
