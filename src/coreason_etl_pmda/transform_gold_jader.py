@@ -55,9 +55,10 @@ def transform_jader_gold(demo_df: pl.DataFrame, drug_df: pl.DataFrame, reac_df: 
     # Note: This creates one row per suspected drug per case.
     base_drug = demo_df.join(suspect_drugs, on=join_key, how="inner")
 
-    # 3. Join Reac (Inner Join)
+    # 3. Join Reac (Left Join)
     # This creates the Cartesian product: (Suspected Drugs) x (Reactions)
-    final = base_drug.join(reac_df, on=join_key, how="inner", suffix="_reac")
+    # We use LEFT JOIN to ensure cases with Suspected Drugs are preserved even if Reaction data is missing.
+    final = base_drug.join(reac_df, on=join_key, how="left", suffix="_reac")
 
     # 4. Select and Rename Columns
     # We define the target schema mapping.

@@ -94,11 +94,14 @@ def test_transform_jader_gold_filtering() -> None:
 
 
 def test_transform_jader_gold_dropped_cases() -> None:
-    """Tests that cases without suspected drugs or without reactions are dropped (Inner Join)."""
+    """
+    Tests that cases without suspected drugs are dropped.
+    Cases with suspected drug but no reaction should be KEPT.
+    """
     demo = pl.DataFrame({"id": ["1", "2", "3"]})
     # Case 1: Has Suspected Drug, Has Reaction -> Keep
-    # Case 2: Has Concomitant Drug only -> Drop
-    # Case 3: Has Suspected Drug, No Reaction -> Drop (assuming Inner Join on Reac)
+    # Case 2: Has Concomitant Drug only -> Drop (Filtered out before join)
+    # Case 3: Has Suspected Drug, No Reaction -> Keep (Left Join)
 
     drug = pl.DataFrame(
         {
@@ -117,8 +120,16 @@ def test_transform_jader_gold_dropped_cases() -> None:
 
     result = transform_jader_gold(demo, drug, reac)
 
-    assert len(result) == 1
-    assert result["case_id"][0] == "1"
+    # Expecting Case 1 and Case 3
+    assert len(result) == 2
+
+    ids = result["case_id"].to_list()
+    assert "1" in ids
+    assert "3" in ids
+
+    # Check Case 3 has None reaction
+    case3 = result.filter(pl.col("case_id") == "3")
+    assert case3["reaction_pt"][0] is None
 
 
 def test_transform_jader_gold_missing_cols_validation() -> None:
