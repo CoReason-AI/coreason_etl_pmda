@@ -11,6 +11,7 @@
 import polars as pl
 from coreason_etl_pmda.transform_gold_approvals import transform_approvals_gold
 from coreason_etl_pmda.transform_gold_jader import transform_jader_gold
+from coreason_etl_pmda.transform_silver import normalize_approvals
 from coreason_etl_pmda.utils_date import convert_japanese_date_to_iso
 from coreason_etl_pmda.utils_text import normalize_text
 
@@ -179,18 +180,38 @@ def test_jader_null_ids() -> None:
 
 def test_approvals_gold_id_stability() -> None:
     # Ensure ID is deterministic for same inputs
+    # Refactored: We must pass through Silver Normalization first to get coreason_id.
+
+    # Raw Japanese input (needs Silver normalization)
     df1 = pl.DataFrame(
         {
-            "approval_id": ["A"],
-            "approval_date": ["Reiwa 2.1.1"],
-            "brand_name_jp": ["B"],
-            "generic_name_jp": ["G"],
+            "承認番号": ["A"],
+            "承認年月日": ["Reiwa 2.1.1"],
+            "販売名": ["B"],
+            "一般的名称": ["G"],
+            "application_type": ["New Drug"],  # Provided by Bronze
         }
     )
-    res1 = transform_approvals_gold(df1)
-    res2 = transform_approvals_gold(df1)
+
+    # 1. Normalize (Silver)
+    silver1 = normalize_approvals(df1)
+
+    # 2. Transform (Gold)
+    # We must mock generic_name_en as Silver requires it to exist for Gold?
+    # Actually Gold assumes it exists.
+    silver1 = silver1.with_columns(pl.lit("G_EN").alias("generic_name_en"))
+
+    res1 = transform_approvals_gold(silver1)
+    res2 = transform_approvals_gold(silver1)
 
     assert res1["coreason_id"][0] == res2["coreason_id"][0]
+
+    # Verify the ID itself is correct (Silver generated)
+    # PMDA + A + 2020-01-01
+    import hashlib
+
+    expected = hashlib.sha256("PMDAA2020-01-01".encode()).hexdigest()
+    assert res1["coreason_id"][0] == expected
 
 
 def test_jader_duplicates() -> None:
