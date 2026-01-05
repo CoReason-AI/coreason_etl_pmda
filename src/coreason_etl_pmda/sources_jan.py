@@ -8,19 +8,18 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+import io
+from urllib.parse import urljoin
+
 import dlt
 import polars as pl
+from bs4 import BeautifulSoup
 from dlt.sources.helpers import requests
 
 from coreason_etl_pmda.utils_logger import logger
 
 # URL for JAN/INN data
 # JAN/INN: https://www.nihs.go.jp/drug/jan_data_e.html
-# The actual file is an Excel/CSV linked from there.
-# We will assume we need to scrape the page to find the link or use a direct link if it's stable.
-# For this implementation, we will allow the user to provide the URL or default to a likely one.
-# The spec says: https://www.nihs.go.jp/drug/jan_data_e.html
-# We will create a resource that can handle downloading an Excel/CSV file from a URL.
 
 
 @dlt.resource(name="bronze_ref_jan_inn", write_disposition="replace")  # type: ignore[misc]
@@ -28,70 +27,71 @@ def jan_inn_source(url: str = "https://www.nihs.go.jp/drug/jan_data_e.html") -> 
     """
     Ingests the NIHS "Japanese Accepted Names" Excel/CSV file.
 
-    In a real scenario, this might need to parse HTML to find the latest xlsx link.
-    For this atomic unit, we will assume the URL points to the file itself or we mock the content.
-    If the URL points to an HTML page, we would need logic to extract the file link.
-
-    Given the spec says "Source Type: CSV / Excel", we will implement a resource that
-    yields rows from the file.
-
-    We'll use pandas/polars or dlt's built-in excel handling if available?
-    dlt has `dlt.sources.filesystem` but for HTTP we might just download it.
-
-    We'll use `pandas` (via dlt extras or install) or `openpyxl`?
-    Wait, I didn't install `pandas` or `openpyxl`. `polars` can read excel too (via `xlsx2csv` or `openpyxl` engine).
-    Let's check if we have `calamine` or `openpyxl` for polars excel reading.
-    Or we can just assume CSV for now if the spec allowed it?
-    Spec says "CSV / Excel".
-
-    Let's try to support Excel using Polars if possible, but we need `openpyxl` or `calamine`.
-    I'll add `openpyxl` to pyproject.toml in a bash command if needed.
-
-    For now, let's implement the logic assuming we can read the content.
+    Logic:
+    1. Fetch the provided URL.
+    2. If Content-Type is HTML, parse it to find the latest Excel/CSV link.
+    3. Download the file.
+    4. Parse with Polars (Excel or CSV).
+    5. Normalize headers to target schema (jan_name_jp, jan_name_en, inn_name_en).
+    6. Yield rows.
     """
-    # Download the content
-    # In tests we will mock requests.get
-    logger.info(f"Downloading JAN/INN data from {url}")
+    logger.info(f"Accessing JAN/INN data source at {url}")
     response = requests.get(url)
     response.raise_for_status()
 
-    # We need to determine if it's Excel or CSV.
-    # We can try to guess from Content-Type or extension.
-    # Or just try reading with Polars.
+    content_type = response.headers.get("Content-Type", "").lower()
+    final_url = url
+    file_content = response.content
 
-    import io
+    # If it's HTML, we need to find the file link
+    if "text/html" in content_type:
+        logger.info("URL points to HTML page. Searching for file link...")
+        soup = BeautifulSoup(response.content, "html.parser")
 
-    content = response.content
+        # heuristic: find links ending in .xlsx, .xls, .csv
+        # Prioritize "JAN" in text
+        candidates = []
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            text = a.get_text(strip=True)
+            full_url = urljoin(url, href)
+            lower_href = href.lower()
 
+            if lower_href.endswith((".xlsx", ".xls", ".csv")):
+                score = 0
+                if "jan" in text.lower():
+                    score += 10
+                if "name" in text.lower():
+                    score += 5
+                if "list" in text.lower():
+                    score += 5
+
+                candidates.append((score, full_url))
+
+        if not candidates:
+            raise ValueError(f"No suitable Excel/CSV link found on {url}")
+
+        # Sort by score descending
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        best_link = candidates[0][1]
+        logger.info(f"Found best file link: {best_link}")
+
+        # Download the file
+        final_url = best_link
+        file_resp = requests.get(final_url)
+        file_resp.raise_for_status()
+        file_content = file_resp.content
+
+    # Parse content
     try:
         # Try reading as Excel
-        # Polars read_excel requires a file-like object or path.
-        # It also requires a dependency.
-        df = pl.read_excel(io.BytesIO(content))
+        df = pl.read_excel(io.BytesIO(file_content))
     except Exception:
         # Fallback to CSV
         try:
-            df = pl.read_csv(io.BytesIO(content))
+            df = pl.read_csv(io.BytesIO(file_content))
         except Exception as e:
-            # If both fail, raise
-            raise ValueError(f"Could not parse JAN/INN file as Excel or CSV: {e}") from e
-
-    # Yield records
-    # Clean headers? Spec says target schema: jan_name_jp, jan_name_en, inn_name_en
-    # The source file might have different headers.
-    # We will yield raw dicts and let transformation layer handle mapping?
-    # Spec says "Target Schema: bronze_ref_jan_inn (jan_name_jp, jan_name_en, inn_name_en)".
-    # This implies we should map it here if possible or just dump raw.
-    # Bronze usually implies "Raw Payload" + metadata.
-    # But the spec explicitly lists columns for Bronze Ref JAN INN.
-    # "Schema Standard: source_id, ingestion_ts, raw_payload" is for the GENERIC bronze layer described?
-    # Or is that for specific files?
-    # "Layer 1: Bronze (The Lake) ... Target Schema: bronze_ref_jan_inn (jan_name_jp, jan_name_en, inn_name_en)."
-    # It seems for Reference data, we are loading structured data directly?
-    # Or should we follow the "raw_payload" pattern?
-    # The spec says:
-    # "Ingestion Logic: ... Load rows." and "Target Schema: bronze_ref_jan_inn (jan_name_jp, jan_name_en, inn_name_en)."
-    # This suggests we should normalize headers here to match the target schema.
+            raise ValueError(f"Could not parse JAN/INN file from {final_url} as Excel or CSV: {e}") from e
 
     # Normalize Headers
     # Mapping assumed from standard Japanese JAN files
@@ -105,27 +105,38 @@ def jan_inn_source(url: str = "https://www.nihs.go.jp/drug/jan_data_e.html") -> 
     }
 
     # Rename columns
-    # We look for partial matches or exact matches?
-    # Polars rename requires exact matches for existing columns.
     rename_dict = {}
     for col in df.columns:
-        # Normalize whitespace
         clean_col = col.strip()
         if clean_col in header_mapping:
             rename_dict[col] = header_mapping[clean_col]
 
-    df = df.rename(rename_dict)
+    # Handle duplicate target columns if source has multiple variants mapping to same target
+    # We keep the first one encountered or prioritize?
+    # Simple fix: if multiple source cols map to same target, we might have a collision in rename_dict values.
+    # Polars rename requires unique output names if input names are different.
+    # But here inputs are different keys in rename_dict.
+    # We need to make sure we don't map two DIFFERENT columns to the SAME target name
+    # in the same rename call if both exist.
 
-    # Select only target columns if they exist, or keep all?
-    # Spec "Target Schema: bronze_ref_jan_inn (jan_name_jp, jan_name_en, inn_name_en)"
-    # We should ensure these exist.
+    final_rename_dict = {}
+    seen_targets = set()
 
-    # If columns are missing, we might yield what we have, but Silver expects jan_name_jp.
-    # Let's verify jan_name_jp exists.
+    # Iterate over columns present in DF to determine what to rename
+    for col in df.columns:
+        if col in rename_dict:
+            target = rename_dict[col]
+            if target not in seen_targets:
+                final_rename_dict[col] = target
+                seen_targets.add(target)
+            else:
+                logger.warning(f"Duplicate mapping for {target} found in column {col}. Ignoring this column.")
+
+    df = df.rename(final_rename_dict)
+
     if "jan_name_jp" not in df.columns:
         logger.warning(f"jan_name_jp not found in JAN source. Columns: {df.columns}")
-        # We continue, but downstream might fail or skip.
 
-    # We yield all columns but the renamed ones are now compliant.
+    # Yield rows
     for row in df.iter_rows(named=True):
         yield row
