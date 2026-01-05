@@ -12,7 +12,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from coreason_etl_pmda.sources_approvals import approvals_source
+from coreason_etl_pmda.sources.approvals import approvals_source
 
 
 @pytest.fixture  # type: ignore[misc]
@@ -44,7 +44,7 @@ def test_full_width_whitespace_headers(mock_state: MagicMock) -> None:
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -91,7 +91,7 @@ def test_multiple_links_in_report_cell(mock_state: MagicMock) -> None:
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -138,7 +138,7 @@ def test_empty_critical_cells(mock_state: MagicMock) -> None:
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -185,7 +185,7 @@ def test_duplicate_headers(mock_state: MagicMock) -> None:
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -221,7 +221,7 @@ def test_interleaved_unexpected_columns(mock_state: MagicMock) -> None:
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -259,7 +259,7 @@ def test_missing_critical_columns(mock_state: MagicMock) -> None:
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -287,7 +287,7 @@ def test_duplicate_entries_on_page(mock_state: MagicMock) -> None:
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -323,7 +323,7 @@ def test_mixed_valid_and_invalid_rows(mock_state: MagicMock) -> None:
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -349,7 +349,7 @@ def test_html_comments_inside_table(mock_state: MagicMock) -> None:
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"

@@ -14,45 +14,26 @@ from datetime import datetime, timezone
 from urllib.parse import urljoin
 
 import dlt
-from bs4 import BeautifulSoup
-from dlt.sources.helpers import requests
 
+from coreason_etl_pmda.config import settings
 from coreason_etl_pmda.utils_logger import logger
+from coreason_etl_pmda.utils_scraping import fetch_url, get_soup
 
 
 @dlt.resource(name="bronze_review_reports", write_disposition="merge", primary_key="source_id")  # type: ignore[misc]
 def review_reports_source(
-    url: str = "https://www.pmda.go.jp/review-services/drug-reviews/review-information/p-drugs/0001.html",
+    url: str = settings.URL_APPROVALS,
 ) -> dlt.sources.DltSource:
     """
     Ingests PMDA Review Reports (PDFs).
-    1. Scrapes the Approvals page.
-    2. Identifies drugs with Review Reports (審査報告書).
-    3. Downloads all parts (Part 1, Part 2, etc.).
-    4. Yields raw PDF content.
-
-    Schema:
-    - source_id: PDF URL (PK)
-    - ingestion_ts: Timestamp
-    - raw_payload: {
-        content: bytes,
-        brand_name_jp: str,
-        part_index: int
-      }
-
-    Refresh Strategy: Delta (Merge).
-    We use 'source_id' (PDF URL) as primary key to deduplicate.
-    We also check dlt state to skip downloading if already ingested?
-    For strict Delta, we should skip download.
     """
     # Load state to skip existing
     current_state = dlt.current.source_state()
     downloaded_ids = current_state.setdefault("downloaded_ids", {})
 
     logger.info(f"Scraping Review Reports from {url}")
-    response = requests.get(url)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.content, "html.parser")
+    response = fetch_url(url)
+    soup = get_soup(response)
     original_encoding = response.encoding or "unknown"
 
     tables = soup.find_all("table")
@@ -104,20 +85,12 @@ def review_reports_source(
                     if not pdf_url.lower().endswith(".pdf"):
                         continue
 
-                    # Check if already downloaded
-                    # Simple check: if in state.
-                    # Note: State grows indefinitely. In production we might need windowing or checking destination.
-                    # Given "Snapshot" nature of approval page (it lists ALL or recent?),
-                    # usually it lists recent.
-                    # But without last_modified check, we rely on URL.
                     if pdf_url in downloaded_ids:
-                        # logger.info(f"Skipping existing: {pdf_url}")
                         continue
 
                     # Download PDF
                     try:
-                        pdf_resp = requests.get(pdf_url)
-                        pdf_resp.raise_for_status()
+                        pdf_resp = fetch_url(pdf_url)
 
                         yield {
                             "source_id": pdf_url,
@@ -133,9 +106,6 @@ def review_reports_source(
 
                         # Mark as downloaded
                         downloaded_ids[pdf_url] = int(time.time())
-
-                        # Rate limit: Mandatory 1 second
-                        time.sleep(1.0)
 
                     except Exception:
                         logger.exception(f"Failed to download PDF: {pdf_url}")

@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import polars as pl
 import pytest
 from coreason_etl_pmda.silver.transform_silver_jader import normalize_jader_demo
-from coreason_etl_pmda.sources_approvals import approvals_source
+from coreason_etl_pmda.sources.approvals import approvals_source
 from pydantic import ValidationError
 
 
@@ -34,7 +34,7 @@ def test_silver_validation_failure() -> None:
 def test_approvals_source_no_tables() -> None:
     """Test scraping where no tables are found."""
     html_content = "<html><body><p>No tables here</p></body></html>"
-    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -61,7 +61,7 @@ def test_approvals_source_malformed_headers() -> None:
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
