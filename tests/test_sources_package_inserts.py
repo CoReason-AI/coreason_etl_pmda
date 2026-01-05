@@ -13,7 +13,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-import requests  # type: ignore[import-untyped]
+import requests
 
 from coreason_etl_pmda.sources.package_inserts import package_inserts_source
 

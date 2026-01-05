@@ -14,7 +14,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import dlt
-import requests  # type: ignore[import-untyped]
+import requests
 
 from coreason_etl_pmda.config import settings
 from coreason_etl_pmda.utils_logger import logger

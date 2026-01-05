@@ -11,7 +11,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-import requests  # type: ignore[import-untyped]
+import requests
 from bs4 import BeautifulSoup
 
 from coreason_etl_pmda.utils_scraping import fetch_url, get_session, get_soup
