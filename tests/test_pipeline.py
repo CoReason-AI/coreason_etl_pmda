@@ -9,7 +9,6 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 from unittest.mock import MagicMock, patch
-
 from coreason_etl_pmda.pipeline import run_bronze_pipeline
 
 

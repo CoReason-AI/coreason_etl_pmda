@@ -14,7 +14,6 @@ from datetime import datetime, timezone
 from urllib.parse import urljoin
 
 import dlt
-
 from coreason_etl_pmda.config import settings
 from coreason_etl_pmda.utils_logger import logger
 from coreason_etl_pmda.utils_scraping import fetch_url, get_soup

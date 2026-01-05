@@ -14,7 +14,6 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pyarrow as pa
-
 from coreason_etl_pmda.sources.jader import jader_source
 
 

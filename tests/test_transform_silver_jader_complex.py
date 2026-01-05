@@ -9,7 +9,6 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 import polars as pl
-
 from coreason_etl_pmda.silver.transform_silver_jader import (
     normalize_jader_demo,
     normalize_jader_drug,

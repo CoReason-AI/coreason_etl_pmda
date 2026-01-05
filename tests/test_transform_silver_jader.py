@@ -10,7 +10,6 @@
 
 import polars as pl
 import pytest
-
 from coreason_etl_pmda.silver.transform_silver_jader import (
     normalize_jader_demo,
     normalize_jader_drug,

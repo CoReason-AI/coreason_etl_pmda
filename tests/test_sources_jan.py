@@ -12,9 +12,8 @@ from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
-from dlt.extract.exceptions import ResourceExtractionError
-
 from coreason_etl_pmda.sources.jan import jan_inn_source
+from dlt.extract.exceptions import ResourceExtractionError
 
 
 def test_jan_inn_source_direct_file() -> None:

@@ -13,10 +13,9 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from coreason_etl_pmda.sources.approvals import approvals_source
 from dlt.extract.exceptions import ResourceExtractionError
 from dlt.sources.helpers import requests
-
-from coreason_etl_pmda.sources.approvals import approvals_source
 
 
 @pytest.fixture  # type: ignore[misc]
