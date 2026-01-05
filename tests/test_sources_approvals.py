@@ -80,12 +80,14 @@ def test_approvals_source_scraping_japanese(mock_state: MagicMock) -> None:
         assert payload1["販売名"] == "ブランドA"
         assert payload1["承認番号"] == "123456"
         assert data[0]["source_id"] == "123456"
+        assert payload1["review_report_url"] == "http://example.com/report_a.pdf"
 
         # Row 2
         payload2 = data[1]["raw_payload"]
         assert payload2["販売名"] == "ブランドB"
         assert payload2["承認番号"] == "789012"
         assert data[1]["source_id"] == "789012"
+        assert "review_report_url" not in payload2
 
 
 def test_approvals_source_incremental() -> None:
@@ -94,9 +96,9 @@ def test_approvals_source_incremental() -> None:
     <html>
         <body>
             <table>
-                <tr><th>販売名</th><th>承認番号</th><th>承認年月日</th></tr>
-                <tr><td>A</td><td>1001</td><td>D1</td></tr>
-                <tr><td>B</td><td>1002</td><td>D2</td></tr>
+                <tr><th>販売名</th><th>承認番号</th><th>承認年月日</th><th>一般的名称</th></tr>
+                <tr><td>A</td><td>1001</td><td>D1</td><td>G1</td></tr>
+                <tr><td>B</td><td>1002</td><td>D2</td><td>G2</td></tr>
             </table>
         </body>
     </html>
@@ -117,6 +119,7 @@ def test_approvals_source_incremental() -> None:
             assert data1[1]["source_id"] == "1002"
             assert "seen_ids" in state
             assert "1001" in state["seen_ids"]
+            assert "1002" in state["seen_ids"]
 
         # 2. Second Run (Same data)
         with patch("dlt.current.source_state", return_value=state):
@@ -128,9 +131,9 @@ def test_approvals_source_incremental() -> None:
         <html>
             <body>
                 <table>
-                    <tr><th>販売名</th><th>承認番号</th><th>承認年月日</th></tr>
-                    <tr><td>A</td><td>1001</td><td>D1</td></tr>
-                    <tr><td>C</td><td>1003</td><td>D3</td></tr>
+                    <tr><th>販売名</th><th>承認番号</th><th>承認年月日</th><th>一般的名称</th></tr>
+                    <tr><td>A</td><td>1001</td><td>D1</td><td>G1</td></tr>
+                    <tr><td>C</td><td>1003</td><td>D3</td><td>G3</td></tr>
                 </table>
             </body>
         </html>
@@ -142,16 +145,19 @@ def test_approvals_source_incremental() -> None:
             assert len(data3) == 1
             assert data3[0]["source_id"] == "1003"
             assert "1003" in state["seen_ids"]
+            assert "1001" in state["seen_ids"]
 
 
 def test_approvals_source_fallback_id(mock_state: MagicMock) -> None:
     """Test fallback ID generation when Approval Number is missing."""
+    # Ensure enough headers to match heuristic (need >= 2 matches from keywords)
+    # Keywords: 販売名, 一般的名称, 承認年月日, 承認番号
     html_content = """
     <html>
         <body>
             <table>
-                <tr><th>販売名</th><th>承認年月日</th></tr>
-                <tr><td>BrandX</td><td>2020-01-01</td></tr>
+                <tr><th>販売名</th><th>承認年月日</th><th>一般的名称</th></tr>
+                <tr><td>BrandX</td><td>2020-01-01</td><td>GenX</td></tr>
             </table>
         </body>
     </html>
@@ -323,6 +329,7 @@ def test_approvals_source_shift_jis_encoding(mock_state: MagicMock) -> None:
         </body>
     </html>
     """
+    # Create bytes using shift_jis
     html_bytes = html_str.encode("shift_jis")
 
     with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
@@ -396,7 +403,7 @@ def test_approvals_source_relative_links(mock_state: MagicMock) -> None:
 
 
 def test_approvals_source_unknown_encoding_fallback(mock_state: MagicMock) -> None:
-    """Test fallback when response.encoding is None."""
+    """Test fallback when response.encoding is None but BS4 detects it."""
     html_content = """
     <html>
         <body>
@@ -415,4 +422,36 @@ def test_approvals_source_unknown_encoding_fallback(mock_state: MagicMock) -> No
 
         data = list(approvals_source())
         assert len(data) == 1
-        assert data[0]["original_encoding"] == "unknown"
+        # BS4 detects utf-8 from the content
+        assert data[0]["original_encoding"] == "utf-8"
+
+
+def test_approvals_source_multiple_review_links(mock_state: MagicMock) -> None:
+    """Test behavior when multiple links exist in Review Report column (e.g. Part 1, Part 2)."""
+    # Should pick the first one
+    html_content = """
+    <html>
+        <body>
+            <table>
+                <tr><th>販売名</th><th>一般的名称</th><th>承認年月日</th><th>審査報告書</th></tr>
+                <tr>
+                    <td>A</td><td>G</td><td>D</td>
+                    <td>
+                        <a href="part1.pdf">Part 1</a>
+                        <br>
+                        <a href="part2.pdf">Part 2</a>
+                    </td>
+                </tr>
+            </table>
+        </body>
+    </html>
+    """
+    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.content = html_content.encode("utf-8")
+        mock_resp.encoding = "utf-8"
+        mock_get.return_value = mock_resp
+
+        data = list(approvals_source(url="http://example.com/"))
+        assert len(data) == 1
+        assert data[0]["raw_payload"]["review_report_url"] == "http://example.com/part1.pdf"

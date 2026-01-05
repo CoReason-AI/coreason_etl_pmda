@@ -169,6 +169,7 @@ def test_jan_inn_source_csv_fallback() -> None:
         assert len(data) == 1
         mock_read_csv.assert_called_once()
 
+
 def test_jan_inn_source_parsing_failure() -> None:
     # Test failure of both Excel and CSV parsing
     with (
