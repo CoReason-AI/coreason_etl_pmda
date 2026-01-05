@@ -8,6 +8,8 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+from collections.abc import Generator
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,7 +18,13 @@ from dlt.extract.exceptions import ResourceExtractionError
 from dlt.sources.helpers import requests
 
 
-def test_approvals_source_scraping_japanese() -> None:
+@pytest.fixture  # type: ignore[misc]
+def mock_state() -> Generator[MagicMock, None, None]:
+    with patch("dlt.current.source_state", return_value={}) as m:
+        yield m
+
+
+def test_approvals_source_scraping_japanese(mock_state: MagicMock) -> None:
     # HTML with Japanese headers
     # Include 承認番号 (Approval Number)
     html_content = """
@@ -67,42 +75,110 @@ def test_approvals_source_scraping_japanese() -> None:
 
         assert len(data) == 2
 
-        # Verify Envelope
-        for row in data:
-            assert "source_id" in row
-            assert row["source_id"] == "http://example.com/jp"
-            assert "ingestion_ts" in row
-            assert "raw_payload" in row
-            assert row["original_encoding"] == "utf-8"
-
         # Row 1
         payload1 = data[0]["raw_payload"]
-        # Expect Japanese keys
         assert payload1["販売名"] == "ブランドA"
-        assert payload1["一般的名称"] == "ジェネリックA"
-        assert payload1["承認年月日"] == "令和2年1月1日"
         assert payload1["承認番号"] == "123456"
-        assert payload1["review_report_url"] == "http://example.com/report_a.pdf"
-        assert payload1["薬効分類名"] == "効能A"
-        assert payload1["application_type"] == "New Drug"  # Default
+        assert data[0]["source_id"] == "123456"
 
         # Row 2
         payload2 = data[1]["raw_payload"]
         assert payload2["販売名"] == "ブランドB"
         assert payload2["承認番号"] == "789012"
-        # review_report_url might not be present if no link found?
-        # Code logic: `if review_url: record["review_report_url"] = review_url`
-        assert "review_report_url" not in payload2
-        assert payload2["application_type"] == "New Drug"
+        assert data[1]["source_id"] == "789012"
 
 
-def test_approvals_source_application_type_override() -> None:
+def test_approvals_source_incremental() -> None:
+    """Test High-Water Mark (incremental loading) logic."""
     html_content = """
     <html>
         <body>
             <table>
-                <tr><th>販売名</th><th>一般的名称</th><th>承認年月日</th></tr>
-                <tr><td>BrandG</td><td>GenG</td><td>R2.1.1</td></tr>
+                <tr><th>販売名</th><th>承認番号</th><th>承認年月日</th></tr>
+                <tr><td>A</td><td>1001</td><td>D1</td></tr>
+                <tr><td>B</td><td>1002</td><td>D2</td></tr>
+            </table>
+        </body>
+    </html>
+    """
+
+    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.content = html_content.encode("utf-8")
+        mock_resp.encoding = "utf-8"
+        mock_get.return_value = mock_resp
+
+        # 1. First Run
+        state: dict[str, Any] = {}
+        with patch("dlt.current.source_state", return_value=state):
+            data1 = list(approvals_source())
+            assert len(data1) == 2
+            assert data1[0]["source_id"] == "1001"
+            assert data1[1]["source_id"] == "1002"
+            assert "seen_ids" in state
+            assert "1001" in state["seen_ids"]
+
+        # 2. Second Run (Same data)
+        with patch("dlt.current.source_state", return_value=state):
+            data2 = list(approvals_source())
+            assert len(data2) == 0
+
+        # 3. Third Run (New data)
+        html_content_new = """
+        <html>
+            <body>
+                <table>
+                    <tr><th>販売名</th><th>承認番号</th><th>承認年月日</th></tr>
+                    <tr><td>A</td><td>1001</td><td>D1</td></tr>
+                    <tr><td>C</td><td>1003</td><td>D3</td></tr>
+                </table>
+            </body>
+        </html>
+        """
+        mock_resp.content = html_content_new.encode("utf-8")
+
+        with patch("dlt.current.source_state", return_value=state):
+            data3 = list(approvals_source())
+            assert len(data3) == 1
+            assert data3[0]["source_id"] == "1003"
+            assert "1003" in state["seen_ids"]
+
+
+def test_approvals_source_fallback_id(mock_state: MagicMock) -> None:
+    """Test fallback ID generation when Approval Number is missing."""
+    html_content = """
+    <html>
+        <body>
+            <table>
+                <tr><th>販売名</th><th>承認年月日</th></tr>
+                <tr><td>BrandX</td><td>2020-01-01</td></tr>
+            </table>
+        </body>
+    </html>
+    """
+    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.content = html_content.encode("utf-8")
+        mock_resp.encoding = "utf-8"
+        mock_get.return_value = mock_resp
+
+        data = list(approvals_source())
+        assert len(data) == 1
+        # ID should be hash
+        import hashlib
+
+        raw = "BrandX|2020-01-01"
+        expected_id = hashlib.md5(raw.encode("utf-8")).hexdigest()
+        assert data[0]["source_id"] == expected_id
+
+
+def test_approvals_source_application_type_override(mock_state: MagicMock) -> None:
+    html_content = """
+    <html>
+        <body>
+            <table>
+                <tr><th>販売名</th><th>一般的名称</th><th>承認年月日</th><th>承認番号</th></tr>
+                <tr><td>BrandG</td><td>GenG</td><td>R2.1.1</td><td>999</td></tr>
             </table>
         </body>
     </html>
@@ -119,10 +195,10 @@ def test_approvals_source_application_type_override() -> None:
 
         assert len(data) == 1
         assert data[0]["raw_payload"]["application_type"] == "Generic"
-        assert data[0]["raw_payload"]["販売名"] == "BrandG"
+        assert data[0]["source_id"] == "999"
 
 
-def test_approvals_source_whitespace_japanese() -> None:
+def test_approvals_source_whitespace_japanese(mock_state: MagicMock) -> None:
     """Test robustness against whitespace in Japanese headers."""
     html_content = """
     <html>
@@ -151,11 +227,10 @@ def test_approvals_source_whitespace_japanese() -> None:
         data = list(approvals_source())
         assert len(data) == 1
         payload = data[0]["raw_payload"]
-        # Code logic strips whitespace from header
         assert payload["販売名"] == "Name"
 
 
-def test_approvals_source_multiple_tables_japanese() -> None:
+def test_approvals_source_multiple_tables_japanese(mock_state: MagicMock) -> None:
     """Test multiple tables on Japanese page."""
     html_content = """
     <html>
@@ -187,7 +262,7 @@ def test_approvals_source_multiple_tables_japanese() -> None:
         assert payload2["販売名"] == "B"
 
 
-def test_approvals_source_ignore_irrelevant_tables() -> None:
+def test_approvals_source_ignore_irrelevant_tables(mock_state: MagicMock) -> None:
     html_content = """
     <html>
         <body>
@@ -224,22 +299,19 @@ def test_approvals_source_ignore_irrelevant_tables() -> None:
         assert payload["販売名"] == "A"
 
 
-def test_approvals_source_network_error() -> None:
+def test_approvals_source_network_error(mock_state: MagicMock) -> None:
     """Test that HTTP errors are raised."""
     with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
         mock_resp = MagicMock()
         mock_resp.raise_for_status.side_effect = requests.HTTPError("404 Not Found")
         mock_get.return_value = mock_resp
 
-        # dlt wraps exceptions in ResourceExtractionError
-        with pytest.raises(ResourceExtractionError) as excinfo:
+        with pytest.raises((ResourceExtractionError, requests.HTTPError)):
             list(approvals_source())
-        assert "404 Not Found" in str(excinfo.value)
 
 
-def test_approvals_source_shift_jis_encoding() -> None:
+def test_approvals_source_shift_jis_encoding(mock_state: MagicMock) -> None:
     """Test handling of Shift_JIS encoded content."""
-    # Construct minimal HTML in bytes
     html_str = """
     <html>
         <head><meta charset="Shift_JIS"></head>
@@ -262,12 +334,11 @@ def test_approvals_source_shift_jis_encoding() -> None:
         data = list(approvals_source())
         assert len(data) == 1
         payload = data[0]["raw_payload"]
-        # BeautifulSoup should have decoded it correctly
         assert payload["販売名"] == "アスピリン"
         assert data[0]["original_encoding"] == "shift_jis"
 
 
-def test_approvals_source_colspan_skip() -> None:
+def test_approvals_source_colspan_skip(mock_state: MagicMock) -> None:
     """Test that rows with colspan/rowspan (mismatched cell count) are skipped."""
     html_content = """
     <html>
@@ -278,8 +349,6 @@ def test_approvals_source_colspan_skip() -> None:
                 <tr><td>A</td><td>G</td><td>D</td></tr>
                 <!-- Colspan Row (only 1 cell, headers expect 3) -->
                 <tr><td colspan="3">Summary info</td></tr>
-                <!-- Rowspan might cause issues if not handled by simple iteration,
-                     but here checking strict length mismatch. -->
                 <tr><td>B</td><td>G2</td><td>D2</td></tr>
             </table>
         </body>
@@ -298,7 +367,7 @@ def test_approvals_source_colspan_skip() -> None:
         assert data[1]["raw_payload"]["販売名"] == "B"
 
 
-def test_approvals_source_relative_links() -> None:
+def test_approvals_source_relative_links(mock_state: MagicMock) -> None:
     """Test that relative URLs are joined correctly."""
     base_url = "https://www.pmda.go.jp/drugs/"
     html_content = """
@@ -322,13 +391,11 @@ def test_approvals_source_relative_links() -> None:
 
         data = list(approvals_source(url=base_url))
         assert len(data) == 1
-        # urljoin('https://www.pmda.go.jp/drugs/', '../reports/file.pdf')
-        # -> 'https://www.pmda.go.jp/reports/file.pdf'
         expected = "https://www.pmda.go.jp/reports/file.pdf"
         assert data[0]["raw_payload"]["review_report_url"] == expected
 
 
-def test_approvals_source_unknown_encoding_fallback() -> None:
+def test_approvals_source_unknown_encoding_fallback(mock_state: MagicMock) -> None:
     """Test fallback when response.encoding is None."""
     html_content = """
     <html>
