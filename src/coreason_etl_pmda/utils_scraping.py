@@ -11,9 +11,9 @@
 import time
 from typing import Any
 
-import requests
+import requests  # type: ignore[import-untyped]
 from bs4 import BeautifulSoup
-from requests.adapters import HTTPAdapter
+from requests.adapters import HTTPAdapter  # type: ignore[import-untyped]
 from urllib3.util.retry import Retry
 
 from coreason_etl_pmda.config import settings

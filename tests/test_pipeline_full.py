@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 import duckdb
 import polars as pl
 import pytest
+
 from coreason_etl_pmda.pipeline_full import PipelineOrchestrator, run_full_pipeline
 
 

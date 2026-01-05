@@ -14,9 +14,10 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from coreason_etl_pmda.sources.jader import jader_source
 from dlt.extract.exceptions import ResourceExtractionError
 from dlt.sources.helpers import requests
+
+from coreason_etl_pmda.sources.jader import jader_source
 
 
 def create_zip_with_csvs(files: dict[str, str | bytes]) -> bytes:

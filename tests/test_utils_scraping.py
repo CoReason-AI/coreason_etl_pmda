@@ -11,8 +11,9 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-import requests
+import requests  # type: ignore[import-untyped]
 from bs4 import BeautifulSoup
+
 from coreason_etl_pmda.utils_scraping import fetch_url, get_session, get_soup
 
 
@@ -49,7 +50,7 @@ def test_fetch_url_rate_limit() -> None:
 
             fetch_url("http://example.com")
 
-            mock_sleep.assert_called_with(1.0) # Default setting
+            mock_sleep.assert_called_with(1.0)  # Default setting
 
 
 def test_fetch_url_iso_8859_1_fix() -> None:

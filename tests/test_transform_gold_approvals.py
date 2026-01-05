@@ -12,6 +12,7 @@ import hashlib
 
 import polars as pl
 import pytest
+
 from coreason_etl_pmda.transform_gold_approvals import transform_approvals_gold
 
 

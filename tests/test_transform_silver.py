@@ -13,6 +13,9 @@ from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
+from requests.models import Response
+
 from coreason_etl_pmda.transform_silver import (
     call_deepseek,
     jan_bridge_ai_fallback,
@@ -21,8 +24,6 @@ from coreason_etl_pmda.transform_silver import (
 )
 from coreason_etl_pmda.utils_date import convert_japanese_date_to_iso
 from coreason_etl_pmda.utils_text import normalize_text
-from polars.testing import assert_frame_equal
-from requests.models import Response
 
 
 @pytest.fixture  # type: ignore[misc]

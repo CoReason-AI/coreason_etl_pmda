@@ -8,14 +8,13 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
-import time
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urljoin
 
 import dlt
-import requests
+import requests  # type: ignore[import-untyped]
 
 from coreason_etl_pmda.config import settings
 from coreason_etl_pmda.utils_logger import logger

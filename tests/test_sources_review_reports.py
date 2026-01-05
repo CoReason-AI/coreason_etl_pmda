@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from coreason_etl_pmda.sources.review_reports import review_reports_source
 
 

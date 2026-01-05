@@ -12,9 +12,10 @@ from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
+from pydantic import ValidationError
+
 from coreason_etl_pmda.silver.transform_silver_jader import normalize_jader_demo
 from coreason_etl_pmda.sources.approvals import approvals_source
-from pydantic import ValidationError
 
 
 def test_silver_validation_failure() -> None:

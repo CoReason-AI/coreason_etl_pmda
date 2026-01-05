@@ -9,19 +9,22 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 from collections.abc import Generator
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests  # type: ignore[import-untyped]
+
 from coreason_etl_pmda.sources.package_inserts import package_inserts_source
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def mock_fetch_url() -> Generator[MagicMock, None, None]:
     with patch("coreason_etl_pmda.sources.package_inserts.fetch_url") as m:
         yield m
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def mock_get_session() -> Generator[MagicMock, None, None]:
     with patch("coreason_etl_pmda.sources.package_inserts.get_session") as m:
         yield m
@@ -68,7 +71,9 @@ def test_package_inserts_pagination(mock_fetch_url: MagicMock, mock_get_session:
     mock_content = MagicMock()
     mock_content.content = b"XML Content"
 
-    def fetch_side_effect(url: str, session=None, method="GET", **kwargs) -> MagicMock:
+    def fetch_side_effect(
+        url: str, session: requests.Session | None = None, method: str = "GET", **kwargs: Any
+    ) -> MagicMock:
         if "page2" in url:
             return mock_page2
         if "iyakuDetail" in url:
@@ -78,7 +83,7 @@ def test_package_inserts_pagination(mock_fetch_url: MagicMock, mock_get_session:
         # Initial search (POST) or first GET
         if method == "POST":
             return mock_page1
-        return mock_page1 # default fallback for initial GET
+        return mock_page1  # default fallback for initial GET
 
     mock_fetch_url.side_effect = fetch_side_effect
 
@@ -115,7 +120,7 @@ def test_package_inserts_fallback_link(mock_fetch_url: MagicMock, mock_get_sessi
     mock_content_resp.content = b"Content"
     mock_content_resp.encoding = "utf-8"
 
-    def fetch_side_effect(url: str, **kwargs) -> MagicMock:
+    def fetch_side_effect(url: str, **kwargs: Any) -> MagicMock:
         if "iyakuDetail" in url:
             return mock_detail_resp
         if "/view/doc" in url:
@@ -158,7 +163,7 @@ def test_package_inserts_priority_logic(mock_fetch_url: MagicMock, mock_get_sess
     mock_content = MagicMock()
     mock_content.content = b"Content"
 
-    def fetch_side_effect_all(url: str, **kwargs) -> MagicMock:
+    def fetch_side_effect_all(url: str, **kwargs: Any) -> MagicMock:
         if "iyakuDetail" in url:
             return mock_detail_all
         return mock_search_resp if "iyakuSearch" in url else mock_content
@@ -182,7 +187,7 @@ def test_package_inserts_priority_logic(mock_fetch_url: MagicMock, mock_get_sess
     mock_detail_sgml = MagicMock()
     mock_detail_sgml.content = detail_html_sgml.encode("utf-8")
 
-    def fetch_side_effect_sgml(url: str, **kwargs) -> MagicMock:
+    def fetch_side_effect_sgml(url: str, **kwargs: Any) -> MagicMock:
         if "iyakuDetail" in url:
             return mock_detail_sgml
         return mock_search_resp if "iyakuSearch" in url else mock_content
@@ -198,10 +203,10 @@ def test_package_inserts_priority_logic(mock_fetch_url: MagicMock, mock_get_sess
 def test_package_inserts_search_error(mock_fetch_url: MagicMock, mock_get_session: MagicMock) -> None:
     """Test handling when the initial search POST request fails."""
 
-    def fetch_side_effect(url: str, method="GET", **kwargs) -> MagicMock:
+    def fetch_side_effect(url: str, method: str = "GET", **kwargs: Any) -> MagicMock:
         if method == "POST":
             raise Exception("Search Connection Error")
-        return MagicMock() # Initial GET
+        return MagicMock()  # Initial GET
 
     mock_fetch_url.side_effect = fetch_side_effect
 
@@ -223,7 +228,7 @@ def test_package_inserts_detail_malformed(mock_fetch_url: MagicMock, mock_get_se
     mock_detail = MagicMock()
     mock_detail.content = b"<html><body>No links here</body></html>"
 
-    def fetch_side_effect(url: str, **kwargs) -> MagicMock:
+    def fetch_side_effect(url: str, **kwargs: Any) -> MagicMock:
         if "iyakuDetail" in url:
             return mock_detail
         return mock_search_resp
@@ -246,7 +251,7 @@ def test_package_inserts_process_detail_exception(mock_fetch_url: MagicMock, moc
         b'<html><table><tr><td><a href="/PmdaSearch/iyakuDetail/GeneralList/1">Detail</a></td></tr></table></html>'
     )
 
-    def fetch_side_effect(url: str, **kwargs) -> MagicMock:
+    def fetch_side_effect(url: str, **kwargs: Any) -> MagicMock:
         if "iyakuDetail" in url:
             raise Exception("Detail Fetch Failed")
         return mock_search_resp
