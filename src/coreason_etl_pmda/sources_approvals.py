@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+import hashlib
 import re
 from datetime import datetime, timezone
 from urllib.parse import urljoin
@@ -46,8 +47,13 @@ def approvals_source(
       Schema: source_id, ingestion_ts, raw_payload, original_encoding
     """
 
-    # Get state
-    _ = dlt.current.source_state()
+    # Get state for incremental loading
+    current_state = dlt.current.source_state()
+    # We track seen IDs to avoid duplicates.
+    # Since we use write_disposition="append", we must filter manually.
+    seen_ids = current_state.setdefault("seen_ids", [])
+    # Convert list to set for O(1) lookup during processing
+    seen_ids_set = set(seen_ids)
 
     logger.info(f"Scraping Approvals from {url} (Type: {application_type})")
     response = requests.get(url)
@@ -58,6 +64,8 @@ def approvals_source(
     original_encoding = response.encoding or "unknown"
 
     tables = soup.find_all("table")
+
+    new_ids = []
 
     for table in tables:
         # Check headers
@@ -74,7 +82,8 @@ def approvals_source(
 
         # Heuristic to identify the correct table using Japanese keywords
         # Common headers: 承認年月日, 販売名, 一般的名称, 申請者氏名, 審査報告書
-        keywords = ["販売名", "一般的名称", "承認年月日"]
+        # Added "承認番号" (Approval Number) to keywords as it's critical for source_id
+        keywords = ["販売名", "一般的名称", "承認年月日", "承認番号"]
         matches = sum(1 for k in keywords if any(k in h for h in headers))
 
         if matches >= 2:
@@ -119,10 +128,44 @@ def approvals_source(
                     record["_source_url"] = url
                     record["application_type"] = application_type
 
+                    # Generate Source ID (Vendor Native ID)
+                    # Priority: "承認番号" -> Hash(Brand + Date)
+                    approval_no_key = next((k for k in record if "承認番号" in k), None)
+                    approval_no = record.get(approval_no_key) if approval_no_key else None
+
+                    if approval_no:
+                        source_id = str(approval_no)
+                    else:
+                        # Fallback: Hash of Brand + Date
+                        # We use Japanese keys
+                        brand_key = next((k for k in record if "販売名" in k), "")
+                        date_key = next((k for k in record if "承認年月日" in k), "")
+                        brand_val = record.get(brand_key, "")
+                        date_val = record.get(date_key, "")
+                        raw_str = f"{brand_val}|{date_val}"
+                        source_id = hashlib.md5(raw_str.encode("utf-8")).hexdigest()
+
+                    # Incremental Loading Check
+                    if source_id in seen_ids_set:
+                        continue
+
+                    # Mark as seen
+                    seen_ids_set.add(source_id)
+                    new_ids.append(source_id)
+
                     # Wrap in Envelope
                     yield {
-                        "source_id": url,
+                        "source_id": source_id,
                         "ingestion_ts": datetime.now(timezone.utc),
                         "original_encoding": original_encoding,
                         "raw_payload": record,
                     }
+
+    # Update state with new IDs
+    # Note: this grows indefinitely.
+    # In a real high-volume scenario, we would use a sliding window or watermark date.
+    # But for PMDA approvals which are relatively low volume (monthly updates), list of IDs is fine.
+    # Also "High-Water Mark" usually implies Date-based.
+    # But without reliable Date parsing in Source (we parse in Silver), ID tracking is safer for exact dedupe.
+    if new_ids:
+        seen_ids.extend(new_ids)
