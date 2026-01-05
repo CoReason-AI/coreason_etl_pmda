@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+import concurrent.futures
 import hashlib
 import os
 from typing import Any
@@ -173,13 +174,18 @@ def jan_bridge_ai_fallback(df: pl.DataFrame) -> pl.DataFrame:
     """
     Step 2: Reasoning Fallback.
     Iterates rows where generic_name_en is NULL.
-    Invokes Mock DeepSeek API.
+    Invokes DeepSeek API concurrently.
     """
     # Identify missing translations
     missing_mask = df["generic_name_en"].is_null()
 
     if not missing_mask.any():
-        return df
+        # If no missing translations, we still want to set status to lookup_success if not present?
+        # Or assume this function is only called if needed?
+        # To be safe and consistent with below logic, if we return early, we might leave status unset.
+        # But if we want to ensure _translation_status is set for all, we should process.
+        # However, optimization: if all have generic_name_en, they are lookup_success.
+        return df.with_columns(pl.lit("lookup_success").alias("_translation_status"))
 
     def translate(struct: dict[str, Any]) -> str | None:
         generic_jp = struct.get("generic_name_jp")
@@ -191,22 +197,42 @@ def jan_bridge_ai_fallback(df: pl.DataFrame) -> pl.DataFrame:
         return call_deepseek(generic_jp, str(brand_jp) if brand_jp else "")
 
     rows = df.to_dicts()
-    updated_rows = []
 
-    for row in rows:
-        if row.get("generic_name_en") is None:
-            # Translation needed
-            trans = translate(row)
+    # Identify indices that need translation
+    indices_to_translate = [i for i, row in enumerate(rows) if row.get("generic_name_en") is None]
+
+    results: dict[int, str | None] = {}
+
+    # Use ThreadPoolExecutor for concurrency
+    # Limit max_workers to avoid hitting rate limits or resource exhaustion too hard
+    # 10 is a reasonable default for I/O bound tasks
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        # Map future to index
+        future_to_idx = {executor.submit(translate, rows[i]): i for i in indices_to_translate}
+
+        for future in concurrent.futures.as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            try:
+                trans = future.result()
+                results[idx] = trans
+            except Exception:
+                # If exception occurs, treat as failed translation
+                results[idx] = None
+
+    # Update rows
+    for i, row in enumerate(rows):
+        if i in results:
+            trans = results[i]
             row["generic_name_en"] = trans
             if trans is None:
                 row["_translation_status"] = "failed"
             else:
                 row["_translation_status"] = "ai_translated"
         else:
+            # Already had a value
             row["_translation_status"] = "lookup_success"
-        updated_rows.append(row)
 
-    return pl.DataFrame(updated_rows, schema_overrides=df.schema)
+    return pl.DataFrame(rows, schema_overrides=df.schema)
 
 
 def call_deepseek(generic_name_jp: str, brand_name_jp: str) -> str | None:
