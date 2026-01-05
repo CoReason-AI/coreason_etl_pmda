@@ -18,12 +18,14 @@ from dlt.sources.helpers import requests
 
 def test_approvals_source_scraping_japanese() -> None:
     # HTML with Japanese headers
+    # Include 承認番号 (Approval Number)
     html_content = """
     <html>
         <body>
             <table>
                 <tr>
                     <th>承認年月日</th>
+                    <th>承認番号</th>
                     <th>販売名</th>
                     <th>一般的名称</th>
                     <th>申請者氏名</th>
@@ -32,6 +34,7 @@ def test_approvals_source_scraping_japanese() -> None:
                 </tr>
                 <tr>
                     <td>令和2年1月1日</td>
+                    <td>123456</td>
                     <td>ブランドA</td>
                     <td>ジェネリックA</td>
                     <td>会社A</td>
@@ -40,6 +43,7 @@ def test_approvals_source_scraping_japanese() -> None:
                 </tr>
                 <tr>
                     <td>令和2年2月1日</td>
+                    <td>789012</td>
                     <td>ブランドB</td>
                     <td>ジェネリックB</td>
                     <td>会社B</td>
@@ -73,17 +77,22 @@ def test_approvals_source_scraping_japanese() -> None:
 
         # Row 1
         payload1 = data[0]["raw_payload"]
-        assert payload1["brand_name_jp"] == "ブランドA"
-        assert payload1["generic_name_jp"] == "ジェネリックA"
-        assert payload1["approval_date"] == "令和2年1月1日"
+        # Expect Japanese keys
+        assert payload1["販売名"] == "ブランドA"
+        assert payload1["一般的名称"] == "ジェネリックA"
+        assert payload1["承認年月日"] == "令和2年1月1日"
+        assert payload1["承認番号"] == "123456"
         assert payload1["review_report_url"] == "http://example.com/report_a.pdf"
-        assert payload1["indication"] == "効能A"
+        assert payload1["薬効分類名"] == "効能A"
         assert payload1["application_type"] == "New Drug"  # Default
 
         # Row 2
         payload2 = data[1]["raw_payload"]
-        assert payload2["brand_name_jp"] == "ブランドB"
-        assert payload2["review_report_url"] is None
+        assert payload2["販売名"] == "ブランドB"
+        assert payload2["承認番号"] == "789012"
+        # review_report_url might not be present if no link found?
+        # Code logic: `if review_url: record["review_report_url"] = review_url`
+        assert "review_report_url" not in payload2
         assert payload2["application_type"] == "New Drug"
 
 
@@ -110,6 +119,7 @@ def test_approvals_source_application_type_override() -> None:
 
         assert len(data) == 1
         assert data[0]["raw_payload"]["application_type"] == "Generic"
+        assert data[0]["raw_payload"]["販売名"] == "BrandG"
 
 
 def test_approvals_source_whitespace_japanese() -> None:
@@ -141,7 +151,8 @@ def test_approvals_source_whitespace_japanese() -> None:
         data = list(approvals_source())
         assert len(data) == 1
         payload = data[0]["raw_payload"]
-        assert payload["brand_name_jp"] == "Name"
+        # Code logic strips whitespace from header
+        assert payload["販売名"] == "Name"
 
 
 def test_approvals_source_multiple_tables_japanese() -> None:
@@ -172,8 +183,8 @@ def test_approvals_source_multiple_tables_japanese() -> None:
         assert len(data) == 2
         payload1 = data[0]["raw_payload"]
         payload2 = data[1]["raw_payload"]
-        assert payload1["brand_name_jp"] == "A"
-        assert payload2["brand_name_jp"] == "B"
+        assert payload1["販売名"] == "A"
+        assert payload2["販売名"] == "B"
 
 
 def test_approvals_source_ignore_irrelevant_tables() -> None:
@@ -210,7 +221,7 @@ def test_approvals_source_ignore_irrelevant_tables() -> None:
         data = list(approvals_source())
         assert len(data) == 1
         payload = data[0]["raw_payload"]
-        assert payload["brand_name_jp"] == "A"
+        assert payload["販売名"] == "A"
 
 
 def test_approvals_source_network_error() -> None:
@@ -229,17 +240,6 @@ def test_approvals_source_network_error() -> None:
 def test_approvals_source_shift_jis_encoding() -> None:
     """Test handling of Shift_JIS encoded content."""
     # Construct minimal HTML in bytes
-    # Note: BeautifulSoup handles encoding detection from meta tags or if we pass bytes,
-    # but here we mock `response.content`.
-    # In the code: `soup = BeautifulSoup(response.content, "html.parser")`
-    # BS4 usually detects encoding from the byte stream if it contains charset meta,
-    # or falls back.
-    # We will simulate `response.encoding` being set correctly by requests.
-
-    # <table><tr><th>販売名</th><th>一般的名称</th><th>承認年月日</th></tr>
-    # <tr><td>アスピリン</td><td>Generic</td><td>Date</td></tr></table>
-    # We need to be careful with byte construction.
-    # Simple approach: decode everything to string then encode to shift_jis
     html_str = """
     <html>
         <head><meta charset="Shift_JIS"></head>
@@ -263,7 +263,7 @@ def test_approvals_source_shift_jis_encoding() -> None:
         assert len(data) == 1
         payload = data[0]["raw_payload"]
         # BeautifulSoup should have decoded it correctly
-        assert payload["brand_name_jp"] == "アスピリン"
+        assert payload["販売名"] == "アスピリン"
         assert data[0]["original_encoding"] == "shift_jis"
 
 
@@ -294,8 +294,8 @@ def test_approvals_source_colspan_skip() -> None:
         data = list(approvals_source())
         # Should match A and B, skip Summary info
         assert len(data) == 2
-        assert data[0]["raw_payload"]["brand_name_jp"] == "A"
-        assert data[1]["raw_payload"]["brand_name_jp"] == "B"
+        assert data[0]["raw_payload"]["販売名"] == "A"
+        assert data[1]["raw_payload"]["販売名"] == "B"
 
 
 def test_approvals_source_relative_links() -> None:
