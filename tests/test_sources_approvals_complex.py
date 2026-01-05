@@ -8,12 +8,21 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
 from coreason_etl_pmda.sources_approvals import approvals_source
 
 
-def test_full_width_whitespace_headers() -> None:
+@pytest.fixture  # type: ignore[misc]
+def mock_state() -> Any:
+    """Mock dlt state for all tests in this module."""
+    with patch("dlt.current.source_state", return_value={}) as m:
+        yield m
+
+
+def test_full_width_whitespace_headers(mock_state: MagicMock) -> None:
     """Test headers with full-width spaces (Zenkaku space) are normalized."""
     # 販\u3000売\u3000名 -> 販売名
     # 承\u3000認\u3000番\u3000号 -> 承認番号
@@ -47,15 +56,13 @@ def test_full_width_whitespace_headers() -> None:
         payload = data[0]["raw_payload"]
 
         # Keys should be normalized (whitespace stripped)
-        # The code uses `re.sub(r"\s+", "", text)`.
-        # \s matches unicode whitespace including \u3000.
         assert "販売名" in payload
         assert "承認番号" in payload
         assert payload["販売名"] == "DrugA"
         assert payload["承認番号"] == "123"
 
 
-def test_multiple_links_in_report_cell() -> None:
+def test_multiple_links_in_report_cell(mock_state: MagicMock) -> None:
     """
     Verify behavior when multiple links exist in the Report cell (e.g., Part 1, Part 2).
     Current logic takes the FIRST link found.
@@ -98,13 +105,10 @@ def test_multiple_links_in_report_cell() -> None:
         assert payload["review_report_url"] == "http://base.com/part1.pdf"
 
 
-def test_empty_critical_cells() -> None:
+def test_empty_critical_cells(mock_state: MagicMock) -> None:
     """
     Verify extraction when 'Approval Number' or 'Brand Name' is empty.
     Logic: `has_brand = any("販売名" in k for k in record.keys())`
-    Wait, `headers` determine keys. If header exists, key exists.
-    If cell is empty, value is empty string.
-    So "has_brand" check passes if header exists.
     """
     html_content = """
     <html>
@@ -117,8 +121,6 @@ def test_empty_critical_cells() -> None:
                     <th>一般的名称</th>
                 </tr>
                 <!-- Row with Empty Brand Name (Should be included? or filtered?) -->
-                <!-- The code checks: has_brand = any("販売名" in k for k in record.keys()) -->
-                <!-- It does NOT check if value is truthy. -->
                 <tr>
                     <td></td>
                     <td>999</td>
@@ -156,11 +158,10 @@ def test_empty_critical_cells() -> None:
         assert row2["承認番号"] == ""
 
 
-def test_duplicate_headers() -> None:
+def test_duplicate_headers(mock_state: MagicMock) -> None:
     """
     Verify behavior with duplicate headers.
-    Python dicts overwrite duplicate keys.
-    Last one wins?
+    Python dicts overwrite duplicate keys. Last one wins.
     """
     html_content = """
     <html>
@@ -195,12 +196,10 @@ def test_duplicate_headers() -> None:
         payload = data[0]["raw_payload"]
 
         # Verify "備考" value.
-        # Loop: `for idx, header in enumerate(headers): record[header] = cell_text`
-        # 2nd "備考" (idx 3) will overwrite 1st "備考" (idx 1).
         assert payload["備考"] == "Note2"
 
 
-def test_interleaved_unexpected_columns() -> None:
+def test_interleaved_unexpected_columns(mock_state: MagicMock) -> None:
     """Test extraction when unknown columns are present."""
     html_content = """
     <html>
@@ -237,15 +236,9 @@ def test_interleaved_unexpected_columns() -> None:
         assert payload["一般的名称"] == "GenE"
 
 
-def test_missing_critical_columns() -> None:
+def test_missing_critical_columns(mock_state: MagicMock) -> None:
     """
     Test tables that match keyword heuristic but miss 'Brand Name' column.
-    The code: `matches = sum(1 for k in keywords if any(k in h for h in headers))`
-    Keywords: ["販売名", "一般的名称", "承認年月日"]
-    Heuristic: matches >= 2.
-
-    Case: Table has '一般的名称' and '承認年月日', but NOT '販売名'.
-    The loop continues, `has_brand` check fails (if it looks for '販売名' key).
     """
     html_content = """
     <html>
@@ -273,7 +266,96 @@ def test_missing_critical_columns() -> None:
         mock_get.return_value = mock_resp
 
         data = list(approvals_source())
-        # Matches heuristic (2 keywords: 一般的名称, 承認年月日).
-        # But `has_brand = any("販売名" in k for k in record.keys())` should fail.
-        # So it yields nothing.
         assert len(data) == 0
+
+
+def test_duplicate_entries_on_page(mock_state: MagicMock) -> None:
+    """
+    Test behavior when the same Approval Number appears twice on the page.
+    The second occurrence should be skipped due to deduplication logic in `seen_ids`.
+    """
+    html_content = """
+    <html>
+        <body>
+            <table>
+                <tr><th>販売名</th><th>承認番号</th><th>承認年月日</th></tr>
+                <tr><td>DrugG</td><td>1001</td><td>R2.1.1</td></tr>
+                <!-- Duplicate ID -->
+                <tr><td>DrugG_Copy</td><td>1001</td><td>R2.1.1</td></tr>
+                <tr><td>DrugH</td><td>1002</td><td>R2.1.2</td></tr>
+            </table>
+        </body>
+    </html>
+    """
+    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.content = html_content.encode("utf-8")
+        mock_resp.encoding = "utf-8"
+        mock_get.return_value = mock_resp
+
+        data = list(approvals_source())
+        # Should contain 1001 (first one) and 1002.
+        assert len(data) == 2
+        assert data[0]["source_id"] == "1001"
+        assert data[0]["raw_payload"]["販売名"] == "DrugG"
+
+        assert data[1]["source_id"] == "1002"
+        assert data[1]["raw_payload"]["販売名"] == "DrugH"
+
+
+def test_mixed_valid_and_invalid_rows(mock_state: MagicMock) -> None:
+    """
+    Test robustness when some rows are malformed (e.g. wrong cell count)
+    interleaved with valid rows.
+    """
+    html_content = """
+    <html>
+        <body>
+            <table>
+                <tr><th>販売名</th><th>承認番号</th><th>承認年月日</th></tr>
+                <tr><td>Valid1</td><td>2001</td><td>D1</td></tr>
+                <!-- Invalid Row: Too few cells -->
+                <tr><td>Invalid</td></tr>
+                <tr><td>Valid2</td><td>2002</td><td>D2</td></tr>
+                <!-- Invalid Row: Too many cells -->
+                <tr><td>Invalid</td><td>999</td><td>D3</td><td>Extra</td></tr>
+            </table>
+        </body>
+    </html>
+    """
+    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.content = html_content.encode("utf-8")
+        mock_resp.encoding = "utf-8"
+        mock_get.return_value = mock_resp
+
+        data = list(approvals_source())
+        assert len(data) == 2
+        assert data[0]["raw_payload"]["販売名"] == "Valid1"
+        assert data[1]["raw_payload"]["販売名"] == "Valid2"
+
+
+def test_html_comments_inside_table(mock_state: MagicMock) -> None:
+    """Test that HTML comments don't break row parsing."""
+    html_content = """
+    <html>
+        <body>
+            <table>
+                <tr><th>販売名</th><th>承認番号</th><th>承認年月日</th></tr>
+                <!-- Comment between rows -->
+                <tr><td>DrugI</td><td>3001</td><td>D1</td></tr>
+                <tr><!-- Comment inside row --><td>DrugJ</td><td>3002</td><td>D2</td></tr>
+            </table>
+        </body>
+    </html>
+    """
+    with patch("coreason_etl_pmda.sources_approvals.requests.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.content = html_content.encode("utf-8")
+        mock_resp.encoding = "utf-8"
+        mock_get.return_value = mock_resp
+
+        data = list(approvals_source())
+        assert len(data) == 2
+        assert data[0]["source_id"] == "3001"
+        assert data[1]["source_id"] == "3002"
