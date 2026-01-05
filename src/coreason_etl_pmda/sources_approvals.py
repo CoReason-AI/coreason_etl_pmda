@@ -92,18 +92,11 @@ def approvals_source(
                     cell: Tag = cells[idx]
                     cell_text = cell.get_text(strip=True)
 
-                    # Map header to field (Japanese)
-                    if "承認年月日" in header:
-                        record["approval_date"] = cell_text
-                    elif "販売名" in header:
-                        record["brand_name_jp"] = cell_text
-                    elif "一般的名称" in header:
-                        record["generic_name_jp"] = cell_text
-                    elif "申請者氏名" in header:
-                        record["applicant_name_jp"] = cell_text
-                    elif "薬効" in header:  # 薬効分類名 (Indication class)
-                        record["indication"] = cell_text
-                    elif "報告書" in header or "概要" in header:  # 審査報告書 / 審査概要
+                    # Store raw Japanese key-value pairs
+                    record[header] = cell_text
+
+                    # Extract Review Report URL if present
+                    if "報告書" in header or "概要" in header:  # 審査報告書 / 審査概要
                         # Extract URL
                         a_tag = cell.find("a", href=True)
                         if a_tag:
@@ -112,8 +105,17 @@ def approvals_source(
                             # Spec says "review_report_url" (singular). We take the first.
                             review_url = urljoin(url, a_tag["href"])
 
-                if "brand_name_jp" in record:
-                    record["review_report_url"] = review_url
+                # Validation: Must have at least Brand Name to be useful
+                # We check for "販売名" or "brand_name" key? No, Japanese key "販売名"
+                # But headers might vary slightly (e.g. "販売名" vs "販売名(日本名)")
+                # So we look for any key containing "販売名"
+                has_brand = any("販売名" in k for k in record.keys())
+
+                if has_brand:
+                    # Enrich with metadata
+                    if review_url:
+                        record["review_report_url"] = review_url
+
                     record["_source_url"] = url
                     record["application_type"] = application_type
 
