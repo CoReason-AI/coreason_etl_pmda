@@ -247,7 +247,29 @@ def test_jan_bridge_ai_fallback_no_missing() -> None:
     """Tests optimization when no translation needed."""
     df = pl.DataFrame({"generic_name_en": ["A", "B"]})
     result = jan_bridge_ai_fallback(df)
-    assert_frame_equal(df, result)
+    # The function adds _translation_status even if skipped
+    expected = df.with_columns(pl.lit("lookup_success").alias("_translation_status"))
+    assert_frame_equal(expected, result)
+
+
+@patch("coreason_etl_pmda.transform_silver.call_deepseek")
+def test_jan_bridge_ai_fallback_concurrency_exception(mock_call: MagicMock) -> None:
+    """Tests exception handling in concurrency loop."""
+    # Force call_deepseek to raise Exception (not return None)
+    mock_call.side_effect = Exception("Critical Failure")
+
+    df = pl.DataFrame(
+        {
+            "generic_name_jp": ["DrugX"],
+            "brand_name_jp": ["BrandX"],
+            "generic_name_en": [None],
+        }
+    )
+
+    result = jan_bridge_ai_fallback(df)
+
+    assert result["generic_name_en"][0] is None
+    assert result["_translation_status"][0] == "failed"
 
 
 def test_jan_bridge_ai_fallback_empty_generic_jp() -> None:
