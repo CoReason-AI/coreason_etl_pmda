@@ -10,6 +10,7 @@
 
 import datetime
 import re
+import unicodedata
 
 # Map Japanese era names to their start years
 ERA_START_YEARS = {
@@ -31,8 +32,8 @@ def convert_japanese_date_to_iso(date_str: str) -> str | None:
     if not date_str:
         return None
 
-    # Normalization for parsing (strip whitespace)
-    clean_str = date_str.strip()
+    # Normalization for parsing (strip whitespace + NFKC for full-width)
+    clean_str = unicodedata.normalize("NFKC", date_str).strip()
 
     # Regex for "Era Year Month Day" pattern
     # Supports:
