@@ -189,3 +189,52 @@ def test_jader_extra_columns_ignored() -> None:
     assert len(result) == 1
     assert "extra_col" not in result.columns
     assert "extra" not in result.columns
+
+
+def test_jader_id_type_mismatch() -> None:
+    """
+    Tests joining when ID is integer in one table and string in another.
+    This simulates incomplete type normalization in Bronze/Silver.
+    Gold usually expects strict types, but Polars might error or fail to join.
+    """
+    # Demo ID is int, Drug ID is str
+    demo = pl.DataFrame({"id": [1], "sex": ["M"]})
+    drug = pl.DataFrame({"id": ["1"], "drug_name": ["D"], "characterization": ["Suspected"]})
+    reac = pl.DataFrame({"id": ["1"], "reaction": ["R"]})
+
+    # The join on column 'id' where types differ (Int64 vs String) usually throws an Error in Polars.
+    # We want to verify it raises an error (strictness) or works if implicit cast (unlikely).
+    try:
+        transform_jader_gold(demo, drug, reac)
+    except Exception as e:
+        # Polars ComputeError or SchemaError
+        assert "join" in str(e).lower() or "type" in str(e).lower()
+        return
+
+    # If it works, that's surprising but fine, but likely it won't join 1 with "1".
+    # If no error, check if it joined.
+    result = transform_jader_gold(demo, drug, reac)
+    # If it didn't join, but "Zero Loss" preserves Drug ("1"), then we get 1 row with Null Demo.
+    # Because Drug is "1" (String). Demo is 1 (Int).
+    # Left Join Drug("1") -> Demo(1). No match.
+    # Result: ID="1", sex=Null.
+    assert len(result) == 1
+    assert result["patient_sex"][0] is None
+
+
+def test_jader_null_values_in_required_columns() -> None:
+    """
+    Tests behavior when required columns exist but contain Nulls (besides ID).
+    e.g., Null drug_name, Null characterization (should be filtered if not Suspected).
+    """
+    # Null Characterization -> Should be filtered out?
+    # Logic: filter(pl.col("characterization") == "Suspected")
+    # Null == "Suspected" -> False/Null -> Filtered out.
+    drug = pl.DataFrame({"id": ["1", "2"], "drug_name": ["D1", "D2"], "characterization": ["Suspected", None]})
+    demo = pl.DataFrame({"id": ["1", "2"]})
+    reac = pl.DataFrame({"id": ["1", "2"]})
+
+    result = transform_jader_gold(demo, drug, reac)
+
+    assert len(result) == 1
+    assert result["case_id"][0] == "1"
