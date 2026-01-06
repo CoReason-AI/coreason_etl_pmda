@@ -115,7 +115,9 @@ def test_get_soup() -> None:
 
     soup = get_soup(mock_resp)
     assert isinstance(soup, BeautifulSoup)
-    assert soup.find("body").text == "Hello"
+    body = soup.find("body")
+    assert body is not None
+    assert body.text == "Hello"
 
 
 def test_should_retry_error_generic() -> None:

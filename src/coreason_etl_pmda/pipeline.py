@@ -39,7 +39,7 @@ from coreason_etl_pmda.utils_logger import logger
 # I will define the Bronze Ingestion Pipeline here.
 
 
-@logger.catch
+@logger.catch  # type: ignore[misc]
 def run_bronze_pipeline(
     destination: str | None = None,
     dataset_name: str = "pmda_bronze",
