@@ -13,9 +13,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 from bs4 import BeautifulSoup
-from tenacity import RetryError, wait_none
 
-from coreason_etl_pmda.utils_scraping import fetch_url, get_session, get_soup, _should_retry_error
+from coreason_etl_pmda.utils_scraping import _should_retry_error, fetch_url, get_session, get_soup
 
 
 def test_get_session() -> None:
@@ -73,7 +72,7 @@ def test_fetch_url_retry_connection_error() -> None:
         mock_request.side_effect = [
             requests.ConnectionError("Fail"),
             requests.ConnectionError("Fail"),
-            MagicMock(encoding="utf-8", raise_for_status=MagicMock())
+            MagicMock(encoding="utf-8", raise_for_status=MagicMock()),
         ]
 
         fetch_url("http://example.com")
@@ -122,4 +121,4 @@ def test_get_soup() -> None:
 def test_should_retry_error_generic() -> None:
     """Test that generic exceptions return False in predicate."""
     assert _should_retry_error(ValueError("foo")) is False
-    assert _should_retry_error(requests.HTTPError("foo")) is False # No response
+    assert _should_retry_error(requests.HTTPError("foo")) is False  # No response
