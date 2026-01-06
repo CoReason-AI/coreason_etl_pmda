@@ -9,9 +9,9 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 import polars as pl
-from coreason_etl_pmda.transform_gold_approvals import transform_approvals_gold
-from coreason_etl_pmda.transform_gold_jader import transform_jader_gold
-from coreason_etl_pmda.transform_silver import normalize_approvals
+from coreason_etl_pmda.transformations.gold.transform_gold_approvals import transform_approvals_gold
+from coreason_etl_pmda.transformations.gold.transform_gold_jader import transform_jader_gold
+from coreason_etl_pmda.transformations.silver.transform_silver import normalize_approvals
 from coreason_etl_pmda.utils_date import convert_japanese_date_to_iso
 from coreason_etl_pmda.utils_text import normalize_text
 

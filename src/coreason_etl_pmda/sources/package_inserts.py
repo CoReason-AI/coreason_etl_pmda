@@ -10,23 +10,25 @@
 
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Iterator
 from urllib.parse import urljoin
 
 import dlt
 import requests
+from bs4 import Tag
+
 from coreason_etl_pmda.config import settings
 from coreason_etl_pmda.utils_logger import logger
 from coreason_etl_pmda.utils_scraping import fetch_url, get_session, get_soup
 
 
-@dlt.resource(name="bronze_package_inserts", write_disposition="append")  # type: ignore[misc]
+@dlt.resource(name="bronze_package_inserts", write_disposition="append")
 def package_inserts_source(
     start_date: str | None = None,
     end_date: str | None = None,
     lookback_days: int = 7,
     base_url: str = settings.URL_PMDA_SEARCH,
-) -> dlt.sources.DltSource:
+) -> Iterator[dict[str, Any]]:
     """
     Ingests Package Inserts (SGML/XML/HTML) from PMDA Search.
     """
@@ -77,8 +79,10 @@ def package_inserts_source(
         for row in rows:
             links = row.find_all("a", href=True)
             for link in links:
-                href = link["href"]
-                if "iyakuDetail" in href:
+                if not isinstance(link, Tag):
+                    continue  # pragma: no cover
+                href = link.get("href")
+                if isinstance(href, str) and "iyakuDetail" in href:
                     full_url = urljoin(base_url, href)
 
                     try:
@@ -92,13 +96,17 @@ def package_inserts_source(
 
         logger.info(f"Found {found_on_page} items on page {page_count}")
 
-        next_link = soup.find("a", string=lambda t: t and "次へ" in t)
-        if next_link:
-            next_url = urljoin(base_url, next_link["href"])
-            logger.info(f"Moving to next page: {next_url}")
-            response = fetch_url(next_url, session=session)
-            soup = get_soup(response)
-            page_count += 1
+        next_link = soup.find("a", string=lambda t: t and isinstance(t, str) and "次へ" in t)
+        if next_link and isinstance(next_link, Tag):
+            href = next_link.get("href")
+            if isinstance(href, str):
+                next_url = urljoin(base_url, href)
+                logger.info(f"Moving to next page: {next_url}")
+                response = fetch_url(next_url, session=session)
+                soup = get_soup(response)
+                page_count += 1
+            else:
+                break  # pragma: no cover
         else:
             break
 
@@ -115,20 +123,21 @@ def _process_detail_page(session: requests.Session, url: str) -> Generator[dict[
     # Priority: XML > SGML > HTML
     for ext in ["xml", "sgml", "html"]:
         # Fix B023: Bind ext=ext
-        link = soup.find("a", href=lambda h, ext=ext: h and h.lower().endswith(f".{ext}"))
-        if link:
+        # mypy check for href in BS4 can be tricky if it's not strictly typed as str
+        link = soup.find("a", href=lambda h, ext=ext: h and isinstance(h, str) and h.lower().endswith(f".{ext}"))
+        if link and isinstance(link, Tag) and isinstance(link.get("href"), str):
             target_link = link["href"]
             break
 
     if not target_link:
         for keyword in ["XML", "SGML", "HTML", "添付文書"]:
             # Fix B023: Bind keyword=keyword
-            link = soup.find("a", string=lambda t, keyword=keyword: t and keyword in t)
-            if link:
+            link = soup.find("a", string=lambda t, keyword=keyword: t and isinstance(t, str) and keyword in t)
+            if link and isinstance(link, Tag) and isinstance(link.get("href"), str):
                 target_link = link["href"]
                 break
 
-    if target_link:
+    if target_link and isinstance(target_link, str):
         full_target_url = urljoin(url, target_link)
 
         content_resp = fetch_url(full_target_url, session=session)

@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
-from coreason_etl_pmda.transform_silver import (
+from coreason_etl_pmda.transformations.silver.transform_silver import (
     call_deepseek,
     jan_bridge_ai_fallback,
     jan_bridge_lookup,
@@ -139,7 +139,7 @@ def test_jan_bridge_lookup_missing_columns() -> None:
         jan_bridge_lookup(df_approvals, df_jan)
 
 
-@patch("coreason_etl_pmda.transform_silver.requests.post")
+@patch("coreason_etl_pmda.transformations.silver.transform_silver.requests.post")
 @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "fake_key"})
 def test_jan_bridge_ai_fallback_success(mock_post: MagicMock) -> None:
     """Tests AI fallback when lookup fails."""
@@ -169,7 +169,7 @@ def test_jan_bridge_ai_fallback_success(mock_post: MagicMock) -> None:
     assert result.filter(pl.col("generic_name_jp") == "DrugY")["_translation_status"][0] == "lookup_success"
 
 
-@patch("coreason_etl_pmda.transform_silver.requests.post")
+@patch("coreason_etl_pmda.transformations.silver.transform_silver.requests.post")
 @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "fake_key"})
 def test_jan_bridge_ai_fallback_failure_exception(mock_post: MagicMock) -> None:
     """Tests AI fallback failure (API error exception)."""
@@ -189,7 +189,7 @@ def test_jan_bridge_ai_fallback_failure_exception(mock_post: MagicMock) -> None:
     assert result["_translation_status"][0] == "failed"
 
 
-@patch("coreason_etl_pmda.transform_silver.requests.post")
+@patch("coreason_etl_pmda.transformations.silver.transform_silver.requests.post")
 @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "fake_key"})
 def test_jan_bridge_ai_fallback_failure_status_code(mock_post: MagicMock) -> None:
     """Tests AI fallback failure (HTTP 500 triggers raise_for_status)."""
@@ -217,7 +217,7 @@ def test_jan_bridge_ai_fallback_failure_status_code(mock_post: MagicMock) -> Non
     assert result["_translation_status"][0] == "failed"
 
 
-@patch("coreason_etl_pmda.transform_silver.requests.post")
+@patch("coreason_etl_pmda.transformations.silver.transform_silver.requests.post")
 def test_call_deepseek_no_key(mock_post: MagicMock) -> None:
     """Tests call_deepseek returns None if no API key."""
     # Ensure env var is not set
@@ -227,7 +227,7 @@ def test_call_deepseek_no_key(mock_post: MagicMock) -> None:
         mock_post.assert_not_called()
 
 
-@patch("coreason_etl_pmda.transform_silver.requests.post")
+@patch("coreason_etl_pmda.transformations.silver.transform_silver.requests.post")
 @patch.dict("os.environ", {"DEEPSEEK_API_KEY": "fake_key"})
 def test_call_deepseek_payload(mock_post: MagicMock) -> None:
     """Tests the payload structure sent to DeepSeek."""
@@ -252,7 +252,7 @@ def test_jan_bridge_ai_fallback_no_missing() -> None:
     assert_frame_equal(expected, result)
 
 
-@patch("coreason_etl_pmda.transform_silver.call_deepseek")
+@patch("coreason_etl_pmda.transformations.silver.transform_silver.call_deepseek")
 def test_jan_bridge_ai_fallback_concurrency_exception(mock_call: MagicMock) -> None:
     """Tests exception handling in concurrency loop."""
     # Force call_deepseek to raise Exception (not return None)

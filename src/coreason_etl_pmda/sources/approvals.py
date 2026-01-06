@@ -10,6 +10,7 @@
 
 import hashlib
 from datetime import datetime, timezone
+from typing import Any, Iterator, cast
 
 import dlt
 from coreason_etl_pmda.config import settings
@@ -17,26 +18,26 @@ from coreason_etl_pmda.sources.common import yield_pmda_approval_rows
 from coreason_etl_pmda.utils_logger import logger
 
 
-@dlt.resource(name="bronze_approvals", write_disposition="append")  # type: ignore[misc]
+@dlt.resource(name="bronze_approvals", write_disposition="append")
 def approvals_source(
     url: str = settings.URL_APPROVALS,
     application_type: str = "New Drug",
-) -> dlt.sources.DltSource:
+) -> Iterator[dict[str, Any]]:
     """
     Ingests PMDA Approvals data (Japanese Source).
     """
 
     # Get state for incremental loading
     current_state = dlt.current.source_state()
-    seen_ids = current_state.setdefault("seen_ids", [])
+    seen_ids = cast(list[str], current_state.setdefault("seen_ids", []))
     seen_ids_set = set(seen_ids)
 
     logger.info(f"Scraping Approvals from {url} (Type: {application_type})")
 
-    new_ids = []
+    new_ids: list[str] = []
 
     for row in yield_pmda_approval_rows(url):
-        record = row.data
+        record: dict[str, Any] = dict(row.data)
         review_links = row.review_report_links
 
         # Logic from original approvals.py:

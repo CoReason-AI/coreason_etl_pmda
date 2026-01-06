@@ -14,17 +14,17 @@ import duckdb
 import polars as pl
 
 from coreason_etl_pmda.pipeline import run_bronze_pipeline
-from coreason_etl_pmda.silver.transform_silver_jader import (
-    normalize_jader_demo,
-    normalize_jader_drug,
-    normalize_jader_reac,
-)
-from coreason_etl_pmda.transform_gold_approvals import transform_approvals_gold
-from coreason_etl_pmda.transform_gold_jader import transform_jader_gold
-from coreason_etl_pmda.transform_silver import (
+from coreason_etl_pmda.transformations.gold.transform_gold_approvals import transform_approvals_gold
+from coreason_etl_pmda.transformations.gold.transform_gold_jader import transform_jader_gold
+from coreason_etl_pmda.transformations.silver.transform_silver import (
     jan_bridge_ai_fallback,
     jan_bridge_lookup,
     normalize_approvals,
+)
+from coreason_etl_pmda.transformations.silver.transform_silver_jader import (
+    normalize_jader_demo,
+    normalize_jader_drug,
+    normalize_jader_reac,
 )
 from coreason_etl_pmda.utils_logger import logger
 

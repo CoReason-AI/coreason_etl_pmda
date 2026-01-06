@@ -10,6 +10,7 @@
 
 import time
 from datetime import datetime, timezone
+from typing import Any, Iterator, cast
 
 import dlt
 from coreason_etl_pmda.config import settings
@@ -18,16 +19,16 @@ from coreason_etl_pmda.utils_logger import logger
 from coreason_etl_pmda.utils_scraping import fetch_url
 
 
-@dlt.resource(name="bronze_review_reports", write_disposition="merge", primary_key="source_id")  # type: ignore[misc]
+@dlt.resource(name="bronze_review_reports", write_disposition="merge", primary_key="source_id")
 def review_reports_source(
     url: str = settings.URL_APPROVALS,
-) -> dlt.sources.DltSource:
+) -> Iterator[dict[str, Any]]:
     """
     Ingests PMDA Review Reports (PDFs).
     """
     # Load state to skip existing
     current_state = dlt.current.source_state()
-    downloaded_ids = current_state.setdefault("downloaded_ids", {})
+    downloaded_ids = cast(dict[str, int], current_state.setdefault("downloaded_ids", {}))
 
     logger.info(f"Scraping Review Reports from {url}")
 

@@ -8,6 +8,8 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+from typing import Any
+
 import dlt
 
 from coreason_etl_pmda.config import settings
@@ -37,12 +39,12 @@ from coreason_etl_pmda.utils_logger import logger
 # I will define the Bronze Ingestion Pipeline here.
 
 
-@logger.catch  # type: ignore[misc]
+@logger.catch
 def run_bronze_pipeline(
     destination: str | None = None,
     dataset_name: str = "pmda_bronze",
     duckdb_path: str | None = None,
-) -> dlt.Pipeline:
+) -> Any:
     """
     Runs the Bronze Layer Ingestion.
     """
