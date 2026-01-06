@@ -16,14 +16,14 @@ def transform_jader_gold(demo_df: pl.DataFrame, drug_df: pl.DataFrame, reac_df: 
     Reconstructs JADER data into Gold `pmda_adverse_events` table.
 
     Logic:
-    1. Anchor: demo.csv
-    2. Join: drug.csv (Filter: "Suspected" only)
-    3. Join: reac.csv
+    1. Anchor: drug.csv (Filtered for "Suspected")
+    2. Join: demo.csv (Left Join) - Preserves orphan suspected drugs.
+    3. Join: reac.csv (Left Join)
 
     Produces a Cartesian product of Suspected Drugs x Reactions per Case.
 
     Schema:
-    - case_id (from demo.id)
+    - case_id (from drug.id)
     - patient_sex (from demo.sex)
     - patient_age_group (from demo.age)
     - primary_suspect_drug (from drug.drug_name)
@@ -45,15 +45,18 @@ def transform_jader_gold(demo_df: pl.DataFrame, drug_df: pl.DataFrame, reac_df: 
     if "characterization" not in drug_df.columns:
         raise ValueError("drug_df missing 'characterization' column for filtering suspected drugs")
 
-    # 1. Filter Drug for "Suspected"
+    # 1. Filter Drug for "Suspected" and Valid ID
     # We strictly filter for "Suspected".
     # Note: Silver layer normalizes "被疑薬" -> "Suspected".
-    suspect_drugs = drug_df.filter(pl.col("characterization") == "Suspected")
+    # We also discard rows where 'id' is Null, as a case must have an ID.
+    suspect_drugs = drug_df.filter((pl.col("characterization") == "Suspected") & (pl.col(join_key).is_not_null()))
 
-    # 2. Join Demo + Drug (Inner Join)
-    # This filters cases to only those with at least one suspected drug.
-    # Note: This creates one row per suspected drug per case.
-    base_drug = demo_df.join(suspect_drugs, on=join_key, how="inner")
+    # 2. Join Drug + Demo (Left Join)
+    # This anchors on Suspected Drugs and pulls in Demo info if available.
+    # Prevents loss of Suspected Drugs if Demo record is missing.
+    # Note: demo_df columns might conflict with drug_df columns.
+    # Usually 'id' collides.
+    base_drug = suspect_drugs.join(demo_df, on=join_key, how="left", suffix="_demo")
 
     # 3. Join Reac (Left Join)
     # This creates the Cartesian product: (Suspected Drugs) x (Reactions)
@@ -69,7 +72,7 @@ def transform_jader_gold(demo_df: pl.DataFrame, drug_df: pl.DataFrame, reac_df: 
     def safe_col(name: str, alias: str) -> pl.Expr:
         if name in final.columns:
             return pl.col(name).alias(alias)
-        return pl.lit(None).alias(alias)  # pragma: no cover
+        return pl.lit(None).alias(alias)
 
     # Identify source column names.
     # From Silver JADER:
@@ -77,13 +80,11 @@ def transform_jader_gold(demo_df: pl.DataFrame, drug_df: pl.DataFrame, reac_df: 
     # Drug: id, drug_name, characterization
     # Reac: id, reaction
 
-    # Note: 'reaction' column from reac_df might conflict if demo had 'reaction' (unlikely).
-    # But since we joined, collision might happen.
-    # demo_df joined drug_df. If drug_df had same cols as demo, they get suffix.
-    # Then joined reac_df.
-    # reac_df has 'reaction'.
+    # Note on 'id': 'id' from drug_df (suspect_drugs) is preserved as 'id'.
+    # If demo_df had 'id', it was joined on it.
 
-    # Let's map explicitly.
+    # We take 'id' as case_id.
+
     target_cols = [
         safe_col("id", "case_id"),
         safe_col("sex", "patient_sex"),
