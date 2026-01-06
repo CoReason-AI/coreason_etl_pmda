@@ -8,17 +8,16 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
-import time
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urljoin
 
 import dlt
-from bs4 import BeautifulSoup
-from dlt.sources.helpers import requests
-
+import requests
+from coreason_etl_pmda.config import settings
 from coreason_etl_pmda.utils_logger import logger
+from coreason_etl_pmda.utils_scraping import fetch_url, get_session, get_soup
 
 
 @dlt.resource(name="bronze_package_inserts", write_disposition="append")  # type: ignore[misc]
@@ -26,19 +25,10 @@ def package_inserts_source(
     start_date: str | None = None,
     end_date: str | None = None,
     lookback_days: int = 7,
-    base_url: str = "https://www.pmda.go.jp/PmdaSearch/iyakuSearch/",
+    base_url: str = settings.URL_PMDA_SEARCH,
 ) -> dlt.sources.DltSource:
     """
     Ingests Package Inserts (SGML/XML/HTML) from PMDA Search.
-
-    Refresh Strategy: Delta.
-    We search for updates within a date range using the 'Updated Date' (更新年月日) field.
-
-    Args:
-        start_date: YYYYMMDD string. Default: Today - lookback_days.
-        end_date: YYYYMMDD string. Default: Today.
-        lookback_days: Days to look back if start_date not provided.
-        base_url: PMDA Search URL.
     """
     # Determine Date Range
     now = datetime.now(timezone.utc)
@@ -63,13 +53,16 @@ def package_inserts_source(
     # Perform Search
     logger.info(f"Posting search query to {base_url}")
 
-    session = requests.Session()
-    session.get(base_url)
+    # We use get_session() to ensure we have retries and correct headers
+    session = get_session()
 
-    response = session.post(base_url, data=payload)
-    response.raise_for_status()
+    # Initial GET to establish session cookies if needed, though requests usually handles it
+    # We use fetch_url to be safe with rate limits for the initial hit
+    fetch_url(base_url, session=session)
 
-    soup = BeautifulSoup(response.content, "html.parser")
+    # POST search
+    response = fetch_url(base_url, session=session, method="POST", data=payload)
+    soup = get_soup(response)
 
     if "該当するデータはありません" in response.text:
         logger.info("No updated package inserts found in range.")
@@ -91,7 +84,7 @@ def package_inserts_source(
                     try:
                         yield from _process_detail_page(session, full_url)
                         found_on_page += 1
-                        time.sleep(1.0)  # Rate limit
+                        # Rate limit already handled in _process_detail_page via fetch_url
                     except Exception:
                         logger.exception(f"Failed to process detail page: {full_url}")
 
@@ -103,11 +96,9 @@ def package_inserts_source(
         if next_link:
             next_url = urljoin(base_url, next_link["href"])
             logger.info(f"Moving to next page: {next_url}")
-            response = session.get(next_url)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, "html.parser")
+            response = fetch_url(next_url, session=session)
+            soup = get_soup(response)
             page_count += 1
-            time.sleep(1.0)
         else:
             break
 
@@ -116,9 +107,8 @@ def _process_detail_page(session: requests.Session, url: str) -> Generator[dict[
     """
     Fetches the drug detail page and extracts the Package Insert content (SGML/XML/HTML).
     """
-    response = session.get(url)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.content, "html.parser")
+    response = fetch_url(url, session=session)
+    soup = get_soup(response)
 
     target_link = None
 
@@ -141,12 +131,8 @@ def _process_detail_page(session: requests.Session, url: str) -> Generator[dict[
     if target_link:
         full_target_url = urljoin(url, target_link)
 
-        content_resp = session.get(full_target_url)
-        content_resp.raise_for_status()
-
+        content_resp = fetch_url(full_target_url, session=session)
         encoding = content_resp.encoding or "utf-8"
-
-        # Store raw content as bytes to avoid encoding issues
         content_bytes = content_resp.content
 
         yield {

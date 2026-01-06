@@ -14,7 +14,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from coreason_etl_pmda.sources_jader import jader_source
+from coreason_etl_pmda.sources.jader import jader_source
 from dlt.extract.exceptions import ResourceExtractionError
 from dlt.sources.helpers import requests
 
@@ -89,8 +89,8 @@ def test_jader_source_scraping_and_extraction() -> None:
         {"demo2020.csv": demo_csv, "drug2020.csv": drug_csv, "reac2020.csv": reac_csv, "readme.txt": "ignore me"}
     )
 
-    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
-        with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
+    with patch("coreason_etl_pmda.sources.jader.fetch_url") as mock_get:
+        with patch("coreason_etl_pmda.sources.jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
             # Side effect for multiple calls: first page, then zip
             mock_page_resp = MagicMock()
             mock_page_resp.content = html_content.encode("utf-8")
@@ -149,8 +149,8 @@ def test_jader_source_cp932_encoding() -> None:
 
     zip_bytes = create_zip_with_csvs({"demo.csv": csv_content})
 
-    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
-        with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
+    with patch("coreason_etl_pmda.sources.jader.fetch_url") as mock_get:
+        with patch("coreason_etl_pmda.sources.jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
             mock_page = MagicMock()
             mock_page.content = html_content.encode("utf-8")
 
@@ -175,7 +175,7 @@ def test_jader_source_ignore_other_files() -> None:
         {"random.csv": "A,B\n1,2", "image.png": b"png data", "demo_backup.txt": "not a csv"}
     )
 
-    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.jader.fetch_url") as mock_get:
         mock_get.side_effect = [MagicMock(content=html_content.encode("utf-8")), MagicMock(content=zip_bytes)]
 
         raw_data = list(jader_source())
@@ -192,7 +192,7 @@ def test_jader_source_multiple_zips() -> None:
     zip1 = create_zip_with_csvs({"demo1.csv": "ID\n1"})
     zip2 = create_zip_with_csvs({"demo2.csv": "ID\n2"})
 
-    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.jader.fetch_url") as mock_get:
 
         def side_effect(url: str, *args: Any, **kwargs: Any) -> MagicMock:
             if "part1" in url:
@@ -203,7 +203,7 @@ def test_jader_source_multiple_zips() -> None:
 
         mock_get.side_effect = side_effect
 
-        with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
+        with patch("coreason_etl_pmda.sources.jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
             raw_data = list(jader_source())
             data = unwrap_arrow_data(raw_data)
 
@@ -216,11 +216,11 @@ def test_jader_source_broken_zip() -> None:
     """Test robust handling of a broken zip file."""
     html_content = """<a href="broken.zip">Broken</a>"""
 
-    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.jader.fetch_url") as mock_get:
         mock_get.side_effect = [MagicMock(content=html_content.encode("utf-8")), MagicMock(content=b"not a zip file")]
 
         # The source logs error but continues.
-        with patch("coreason_etl_pmda.sources_jader.logger.exception") as mock_log:
+        with patch("coreason_etl_pmda.sources.jader.logger.exception") as mock_log:
             raw_data = list(jader_source())
             assert len(raw_data) == 0
             mock_log.assert_called()
@@ -228,7 +228,7 @@ def test_jader_source_broken_zip() -> None:
 
 def test_jader_source_http_error() -> None:
     """Test HTTP error on main page."""
-    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.jader.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.raise_for_status.side_effect = requests.HTTPError("404")
         mock_get.return_value = mock_resp
@@ -247,12 +247,12 @@ def test_jader_source_decode_failure() -> None:
         }
     )
 
-    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.jader.fetch_url") as mock_get:
         mock_get.side_effect = [MagicMock(content=html_content.encode("utf-8")), MagicMock(content=zip_bytes)]
 
         # Mock pl.read_csv to raise Exception for all calls
-        with patch("coreason_etl_pmda.sources_jader.pl.read_csv", side_effect=Exception("Decode failed")):
-            with patch("coreason_etl_pmda.sources_jader.logger.error") as mock_log:
+        with patch("coreason_etl_pmda.sources.jader.pl.read_csv", side_effect=Exception("Decode failed")):
+            with patch("coreason_etl_pmda.sources.jader.logger.error") as mock_log:
                 raw_data = list(jader_source())
                 assert len(raw_data) == 0
                 mock_log.assert_called_with(
@@ -266,8 +266,8 @@ def test_jader_source_filename_case_sensitivity() -> None:
 
     zip_bytes = create_zip_with_csvs({"DEMO.CSV": "ID\n1", "Drug.csv": "ID\n1", "REAC.Csv": "ID\n1"})
 
-    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
-        with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
+    with patch("coreason_etl_pmda.sources.jader.fetch_url") as mock_get:
+        with patch("coreason_etl_pmda.sources.jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
             mock_get.side_effect = [MagicMock(content=html_content.encode("utf-8")), MagicMock(content=zip_bytes)]
 
             raw_data = list(jader_source())
@@ -284,15 +284,15 @@ def test_jader_source_empty_file() -> None:
 
     zip_bytes = create_zip_with_csvs({"demo_empty.csv": b"", "demo_valid.csv": "ID\n1"})
 
-    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
-        with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
+    with patch("coreason_etl_pmda.sources.jader.fetch_url") as mock_get:
+        with patch("coreason_etl_pmda.sources.jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
             mock_get.side_effect = [MagicMock(content=html_content.encode("utf-8")), MagicMock(content=zip_bytes)]
 
             # Polars read_csv might raise NoDataError for empty file, or return empty DF.
             # If it raises Exception, our loop catches it and logs error.
             # We want to ensure valid files still process.
 
-            with patch("coreason_etl_pmda.sources_jader.logger.error") as mock_log:
+            with patch("coreason_etl_pmda.sources.jader.logger.error") as mock_log:
                 raw_data = list(jader_source())
                 data = unwrap_arrow_data(raw_data)
 
@@ -315,8 +315,8 @@ def test_jader_source_mixed_encodings() -> None:
 
     zip_bytes = create_zip_with_csvs({"demo_sjis.csv": sjis_content, "demo_utf8.csv": utf8_content})
 
-    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
-        with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
+    with patch("coreason_etl_pmda.sources.jader.fetch_url") as mock_get:
+        with patch("coreason_etl_pmda.sources.jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
             mock_get.side_effect = [MagicMock(content=html_content.encode("utf-8")), MagicMock(content=zip_bytes)]
 
             raw_data = list(jader_source())
@@ -337,8 +337,8 @@ def test_jader_source_duplicate_tables() -> None:
 
     zip_bytes = create_zip_with_csvs({"demo_part1.csv": "ID\n1", "demo_part2.csv": "ID\n2"})
 
-    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
-        with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
+    with patch("coreason_etl_pmda.sources.jader.fetch_url") as mock_get:
+        with patch("coreason_etl_pmda.sources.jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
             mock_get.side_effect = [MagicMock(content=html_content.encode("utf-8")), MagicMock(content=zip_bytes)]
 
             raw_data = list(jader_source())

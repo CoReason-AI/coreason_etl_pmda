@@ -15,37 +15,23 @@ from urllib.parse import urljoin
 
 import dlt
 import polars as pl
-from bs4 import BeautifulSoup
-from dlt.sources.helpers import requests
-
+from coreason_etl_pmda.config import settings
 from coreason_etl_pmda.utils_logger import logger
-
-# URL for JADER
-# JADER: https://www.pmda.go.jp/safety/info-services/drugs/adr-info/suspected-adr/0008.html
+from coreason_etl_pmda.utils_scraping import fetch_url, get_soup
 
 
 @dlt.resource(name="bronze_jader", write_disposition="replace")  # type: ignore[misc]
 def jader_source(
-    url: str = "https://www.pmda.go.jp/safety/info-services/drugs/adr-info/suspected-adr/0008.html",
+    url: str = settings.URL_JADER,
 ) -> dlt.sources.DltSource:
     """
     Ingests JADER data.
-    1. Scrapes the page to find Zip files.
-    2. Downloads Zip.
-    3. Extracts CSVs (demo, drug, reac).
-    4. Yields Arrow Tables with table identifier for high velocity.
-
-    Tables:
-    - bronze_jader_demo
-    - bronze_jader_drug
-    - bronze_jader_reac
     """
 
     # 1. Scrape
     logger.info(f"Scraping JADER snapshot links from {url}")
-    response = requests.get(url)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.content, "html.parser")
+    response = fetch_url(url)
+    soup = get_soup(response)
 
     # Find zip links
     zip_links = []
@@ -62,8 +48,8 @@ def jader_source(
     for zip_url in zip_links:
         try:
             logger.info(f"Processing JADER zip: {zip_url}")
-            resp = requests.get(zip_url)
-            resp.raise_for_status()
+            # Use fetch_url for zip download as well (handles retries/rate limit)
+            resp = fetch_url(zip_url)
 
             with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
                 for filename in z.namelist():
@@ -90,8 +76,7 @@ def jader_source(
                             for enc in encodings:
                                 try:
                                     # We use polars directly.
-                                    # infer_schema_length=0 forces all columns to String,
-                                    # which prevents schema mismatch errors during ingestion of raw data.
+                                    # infer_schema_length=0 forces all columns to String
                                     df = pl.read_csv(io.BytesIO(content), encoding=enc, infer_schema_length=0)
                                     break
                                 except Exception:

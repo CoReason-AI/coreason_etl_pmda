@@ -8,7 +8,6 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
-import os
 from unittest.mock import MagicMock, patch
 
 from coreason_etl_pmda.pipeline import run_bronze_pipeline
@@ -45,18 +44,22 @@ def test_run_bronze_pipeline_custom_path() -> None:
 
 
 def test_run_bronze_pipeline_env_var() -> None:
+    """Test that settings.DUCKDB_PATH is used if duckdb_path arg is not provided."""
     with patch("dlt.pipeline") as mock_pipeline:
         mock_p = MagicMock()
         mock_pipeline.return_value = mock_p
 
-        with patch.dict(os.environ, {"DUCKDB_PATH": "env.db"}):
+        # Patch the settings object imported in pipeline
+        with patch("coreason_etl_pmda.pipeline.settings") as mock_settings:
+            mock_settings.DUCKDB_PATH = "env.db"
+
             run_bronze_pipeline()
 
-        mock_pipeline.assert_called_with(
-            pipeline_name="coreason_etl_pmda_bronze",
-            destination="duckdb:///env.db",
-            dataset_name="pmda_bronze",
-        )
+            mock_pipeline.assert_called_with(
+                pipeline_name="coreason_etl_pmda_bronze",
+                destination="duckdb:///env.db",
+                dataset_name="pmda_bronze",
+            )
 
 
 def test_run_bronze_pipeline_custom_destination_obj() -> None:

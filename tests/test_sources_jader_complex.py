@@ -14,7 +14,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pyarrow as pa
-from coreason_etl_pmda.sources_jader import jader_source
+from coreason_etl_pmda.sources.jader import jader_source
 
 
 # Reusing helper pattern
@@ -58,8 +58,8 @@ def test_jader_source_nested_directories() -> None:
 
     zip_bytes = create_zip_with_csvs({"folder/subfolder/demo_nested.csv": "ID\n1", "root_demo.csv": "ID\n2"})
 
-    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
-        with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
+    with patch("coreason_etl_pmda.sources.jader.fetch_url") as mock_get:
+        with patch("coreason_etl_pmda.sources.jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
             mock_get.side_effect = [MagicMock(content=html_content.encode("utf-8")), MagicMock(content=zip_bytes)]
 
             raw_data = list(jader_source())
@@ -85,8 +85,8 @@ def test_jader_source_complex_csv_syntax() -> None:
 
     zip_bytes = create_zip_with_csvs({"demo_complex.csv": complex_csv})
 
-    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
-        with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
+    with patch("coreason_etl_pmda.sources.jader.fetch_url") as mock_get:
+        with patch("coreason_etl_pmda.sources.jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
             mock_get.side_effect = [MagicMock(content=html_content.encode("utf-8")), MagicMock(content=zip_bytes)]
 
             raw_data = list(jader_source())
@@ -111,8 +111,8 @@ def test_jader_source_type_inference_safety() -> None:
 
     zip_bytes = create_zip_with_csvs({"demo_types.csv": csv_content})
 
-    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
-        with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
+    with patch("coreason_etl_pmda.sources.jader.fetch_url") as mock_get:
+        with patch("coreason_etl_pmda.sources.jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
             mock_get.side_effect = [MagicMock(content=html_content.encode("utf-8")), MagicMock(content=zip_bytes)]
 
             raw_data = list(jader_source())
@@ -148,8 +148,8 @@ def test_jader_source_schema_evolution_simulation() -> None:
 
     zip_bytes = create_zip_with_csvs({"demo_v1.csv": demo_v1, "demo_v2.csv": demo_v2})
 
-    with patch("coreason_etl_pmda.sources_jader.requests.get") as mock_get:
-        with patch("coreason_etl_pmda.sources_jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
+    with patch("coreason_etl_pmda.sources.jader.fetch_url") as mock_get:
+        with patch("coreason_etl_pmda.sources.jader.dlt.mark.with_table_name", side_effect=mock_with_table_name):
             mock_get.side_effect = [MagicMock(content=html_content.encode("utf-8")), MagicMock(content=zip_bytes)]
 
             raw_data = list(jader_source())

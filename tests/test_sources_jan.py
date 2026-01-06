@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
-from coreason_etl_pmda.sources_jan import jan_inn_source
+from coreason_etl_pmda.sources.jan import jan_inn_source
 from dlt.extract.exceptions import ResourceExtractionError
 
 
@@ -21,8 +21,8 @@ def test_jan_inn_source_direct_file() -> None:
     mock_df = pl.DataFrame({"jan_name_jp": ["A"], "jan_name_en": ["B"], "inn_name_en": ["B"]})
 
     with (
-        patch("coreason_etl_pmda.sources_jan.requests.get") as mock_get,
-        patch("coreason_etl_pmda.sources_jan.pl.read_excel", return_value=mock_df) as mock_read_excel,
+        patch("coreason_etl_pmda.sources.jan.fetch_url") as mock_get,
+        patch("coreason_etl_pmda.sources.jan.pl.read_excel", return_value=mock_df) as mock_read_excel,
     ):
         mock_response = MagicMock()
         mock_response.headers = {"Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
@@ -54,8 +54,8 @@ def test_jan_inn_source_html_scrape() -> None:
     """
 
     with (
-        patch("coreason_etl_pmda.sources_jan.requests.get") as mock_get,
-        patch("coreason_etl_pmda.sources_jan.pl.read_excel", return_value=mock_df),
+        patch("coreason_etl_pmda.sources.jan.fetch_url") as mock_get,
+        patch("coreason_etl_pmda.sources.jan.pl.read_excel", return_value=mock_df),
     ):
         # First call returns HTML, second call returns File
         mock_resp_html = MagicMock()
@@ -81,7 +81,7 @@ def test_jan_inn_source_html_no_link() -> None:
     # Test HTML with no suitable links
     html_content = "<html><body><a href='other.pdf'>Guideline</a></body></html>"
 
-    with patch("coreason_etl_pmda.sources_jan.requests.get") as mock_get:
+    with patch("coreason_etl_pmda.sources.jan.fetch_url") as mock_get:
         mock_resp_html = MagicMock()
         mock_resp_html.headers = {"Content-Type": "text/html"}
         mock_resp_html.content = html_content.encode("utf-8")
@@ -104,8 +104,8 @@ def test_jan_inn_source_duplicate_mapping_handled() -> None:
     )
 
     with (
-        patch("coreason_etl_pmda.sources_jan.requests.get") as mock_get,
-        patch("coreason_etl_pmda.sources_jan.pl.read_excel", return_value=mock_df),
+        patch("coreason_etl_pmda.sources.jan.fetch_url") as mock_get,
+        patch("coreason_etl_pmda.sources.jan.pl.read_excel", return_value=mock_df),
     ):
         mock_response = MagicMock()
         mock_response.headers = {"Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
@@ -133,8 +133,8 @@ def test_jan_inn_source_normalization() -> None:
     )
 
     with (
-        patch("coreason_etl_pmda.sources_jan.requests.get") as mock_get,
-        patch("coreason_etl_pmda.sources_jan.pl.read_excel", return_value=mock_df),
+        patch("coreason_etl_pmda.sources.jan.fetch_url") as mock_get,
+        patch("coreason_etl_pmda.sources.jan.pl.read_excel", return_value=mock_df),
     ):
         mock_response = MagicMock()
         mock_response.headers = {"Content-Type": "application/excel"}
@@ -154,9 +154,9 @@ def test_jan_inn_source_csv_fallback() -> None:
     mock_df = pl.DataFrame({"jan_name_jp": ["A"]})
 
     with (
-        patch("coreason_etl_pmda.sources_jan.requests.get") as mock_get,
-        patch("coreason_etl_pmda.sources_jan.pl.read_excel", side_effect=Exception("Not Excel")),
-        patch("coreason_etl_pmda.sources_jan.pl.read_csv", return_value=mock_df) as mock_read_csv,
+        patch("coreason_etl_pmda.sources.jan.fetch_url") as mock_get,
+        patch("coreason_etl_pmda.sources.jan.pl.read_excel", side_effect=Exception("Not Excel")),
+        patch("coreason_etl_pmda.sources.jan.pl.read_csv", return_value=mock_df) as mock_read_csv,
     ):
         mock_response = MagicMock()
         mock_response.headers = {"Content-Type": "application/csv"}
@@ -173,9 +173,9 @@ def test_jan_inn_source_csv_fallback() -> None:
 def test_jan_inn_source_parsing_failure() -> None:
     # Test failure of both Excel and CSV parsing
     with (
-        patch("coreason_etl_pmda.sources_jan.requests.get") as mock_get,
-        patch("coreason_etl_pmda.sources_jan.pl.read_excel", side_effect=Exception("Not Excel")),
-        patch("coreason_etl_pmda.sources_jan.pl.read_csv", side_effect=Exception("Not CSV")),
+        patch("coreason_etl_pmda.sources.jan.fetch_url") as mock_get,
+        patch("coreason_etl_pmda.sources.jan.pl.read_excel", side_effect=Exception("Not Excel")),
+        patch("coreason_etl_pmda.sources.jan.pl.read_csv", side_effect=Exception("Not CSV")),
     ):
         mock_response = MagicMock()
         mock_response.headers = {"Content-Type": "application/octet-stream"}
@@ -194,9 +194,9 @@ def test_jan_inn_source_missing_required_column() -> None:
     mock_df = pl.DataFrame({"wrong_column": ["A"]})
 
     with (
-        patch("coreason_etl_pmda.sources_jan.requests.get") as mock_get,
-        patch("coreason_etl_pmda.sources_jan.pl.read_excel", return_value=mock_df),
-        patch("coreason_etl_pmda.sources_jan.logger.warning") as mock_warn,
+        patch("coreason_etl_pmda.sources.jan.fetch_url") as mock_get,
+        patch("coreason_etl_pmda.sources.jan.pl.read_excel", return_value=mock_df),
+        patch("coreason_etl_pmda.sources.jan.logger.warning") as mock_warn,
     ):
         mock_response = MagicMock()
         mock_response.headers = {"Content-Type": "application/excel"}

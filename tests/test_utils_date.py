@@ -7,7 +7,6 @@
 # Commercial use beyond a 30-day trial requires a separate license.
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
-
 from coreason_etl_pmda.utils_date import convert_japanese_date_to_iso
 
 
