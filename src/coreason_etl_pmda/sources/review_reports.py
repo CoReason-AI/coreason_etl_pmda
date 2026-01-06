@@ -8,15 +8,14 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
-import re
 import time
 from datetime import datetime, timezone
-from urllib.parse import urljoin
 
 import dlt
 from coreason_etl_pmda.config import settings
+from coreason_etl_pmda.sources.common import yield_pmda_approval_rows
 from coreason_etl_pmda.utils_logger import logger
-from coreason_etl_pmda.utils_scraping import fetch_url, get_soup
+from coreason_etl_pmda.utils_scraping import fetch_url
 
 
 @dlt.resource(name="bronze_review_reports", write_disposition="merge", primary_key="source_id")  # type: ignore[misc]
@@ -31,80 +30,40 @@ def review_reports_source(
     downloaded_ids = current_state.setdefault("downloaded_ids", {})
 
     logger.info(f"Scraping Review Reports from {url}")
-    response = fetch_url(url)
-    soup = get_soup(response)
-    original_encoding = response.encoding or "unknown"
 
-    tables = soup.find_all("table")
+    for row in yield_pmda_approval_rows(url):
+        record = row.data
+        review_links = row.review_report_links
 
-    for table in tables:
-        # Check headers to confirm it's the approvals table
-        headers = []
-        header_row = table.find("tr")
-        if not header_row:
-            continue
+        brand_key = next((k for k in record if "販売名" in k), None)
+        brand_name = record.get(brand_key, "") if brand_key else ""
 
-        for th in header_row.find_all(["th", "td"]):
-            text = th.get_text(strip=True)
-            text = re.sub(r"\s+", "", text)
-            headers.append(text)
-
-        keywords = ["販売名", "一般的名称", "審査報告書"]
-        matches = sum(1 for k in keywords if any(k in h for h in headers))
-
-        if matches >= 2:
-            logger.info("Found table with review reports.")
-
-            # Identify which column is "Review Report" (審査報告書) and "Brand Name" (販売名)
-            try:
-                report_col_idx = next(i for i, h in enumerate(headers) if "報告書" in h or "概要" in h)
-                brand_col_idx = next(i for i, h in enumerate(headers) if "販売名" in h)
-            except StopIteration:
-                logger.warning("Could not find required columns in table.")
+        for i, pdf_url in enumerate(review_links):
+            if not pdf_url.lower().endswith(".pdf"):
                 continue
 
-            for tr in table.find_all("tr")[1:]:
-                cells = tr.find_all("td")
-                if not cells or len(cells) < max(report_col_idx, brand_col_idx) + 1:
-                    continue
+            if pdf_url in downloaded_ids:
+                continue
 
-                brand_cell = cells[brand_col_idx]
-                brand_name = brand_cell.get_text(strip=True)
+            # Download PDF
+            try:
+                # fetch_url handles retries and delays
+                pdf_resp = fetch_url(pdf_url)
 
-                report_cell = cells[report_col_idx]
+                yield {
+                    "source_id": pdf_url,
+                    "ingestion_ts": datetime.now(timezone.utc),
+                    "original_encoding": row.original_encoding,
+                    "raw_payload": {
+                        "content": pdf_resp.content,
+                        "brand_name_jp": brand_name,
+                        "part_index": i + 1,
+                        "source_page_url": url,
+                    },
+                }
 
-                # Find all links in the report cell
-                links = report_cell.find_all("a", href=True)
+                # Mark as downloaded
+                downloaded_ids[pdf_url] = int(time.time())
 
-                if not links:
-                    continue
-
-                for i, link in enumerate(links):
-                    pdf_url = urljoin(url, link["href"])
-                    if not pdf_url.lower().endswith(".pdf"):
-                        continue
-
-                    if pdf_url in downloaded_ids:
-                        continue
-
-                    # Download PDF
-                    try:
-                        pdf_resp = fetch_url(pdf_url)
-
-                        yield {
-                            "source_id": pdf_url,
-                            "ingestion_ts": datetime.now(timezone.utc),
-                            "original_encoding": original_encoding,
-                            "raw_payload": {
-                                "content": pdf_resp.content,
-                                "brand_name_jp": brand_name,
-                                "part_index": i + 1,
-                                "source_page_url": url,
-                            },
-                        }
-
-                        # Mark as downloaded
-                        downloaded_ids[pdf_url] = int(time.time())
-
-                    except Exception:
-                        logger.exception(f"Failed to download PDF: {pdf_url}")
+            except Exception:
+                logger.exception(f"Failed to download PDF: {pdf_url}")
