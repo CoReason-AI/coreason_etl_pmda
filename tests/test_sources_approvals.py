@@ -63,7 +63,7 @@ def test_approvals_source_scraping_japanese(mock_state: MagicMock) -> None:
     </html>
     """
 
-    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
+    with patch("coreason_etl_pmda.sources.common.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -104,7 +104,7 @@ def test_approvals_source_incremental() -> None:
     </html>
     """
 
-    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
+    with patch("coreason_etl_pmda.sources.common.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -162,7 +162,7 @@ def test_approvals_source_fallback_id(mock_state: MagicMock) -> None:
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
+    with patch("coreason_etl_pmda.sources.common.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -189,7 +189,7 @@ def test_approvals_source_application_type_override(mock_state: MagicMock) -> No
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
+    with patch("coreason_etl_pmda.sources.common.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -224,7 +224,7 @@ def test_approvals_source_whitespace_japanese(mock_state: MagicMock) -> None:
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
+    with patch("coreason_etl_pmda.sources.common.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -254,7 +254,7 @@ def test_approvals_source_multiple_tables_japanese(mock_state: MagicMock) -> Non
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
+    with patch("coreason_etl_pmda.sources.common.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -293,7 +293,7 @@ def test_approvals_source_ignore_irrelevant_tables(mock_state: MagicMock) -> Non
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
+    with patch("coreason_etl_pmda.sources.common.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -307,7 +307,7 @@ def test_approvals_source_ignore_irrelevant_tables(mock_state: MagicMock) -> Non
 
 def test_approvals_source_network_error(mock_state: MagicMock) -> None:
     """Test that HTTP errors are raised."""
-    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
+    with patch("coreason_etl_pmda.sources.common.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.raise_for_status.side_effect = requests.HTTPError("404 Not Found")
         mock_get.return_value = mock_resp
@@ -332,7 +332,7 @@ def test_approvals_source_shift_jis_encoding(mock_state: MagicMock) -> None:
     # Create bytes using shift_jis
     html_bytes = html_str.encode("shift_jis")
 
-    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
+    with patch("coreason_etl_pmda.sources.common.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_bytes
         mock_resp.encoding = "shift_jis"
@@ -361,7 +361,7 @@ def test_approvals_source_colspan_skip(mock_state: MagicMock) -> None:
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
+    with patch("coreason_etl_pmda.sources.common.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -390,7 +390,7 @@ def test_approvals_source_relative_links(mock_state: MagicMock) -> None:
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
+    with patch("coreason_etl_pmda.sources.common.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
@@ -414,7 +414,7 @@ def test_approvals_source_unknown_encoding_fallback(mock_state: MagicMock) -> No
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
+    with patch("coreason_etl_pmda.sources.common.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = None  # None case
@@ -446,7 +446,7 @@ def test_approvals_source_multiple_review_links(mock_state: MagicMock) -> None:
         </body>
     </html>
     """
-    with patch("coreason_etl_pmda.sources.approvals.fetch_url") as mock_get:
+    with patch("coreason_etl_pmda.sources.common.fetch_url") as mock_get:
         mock_resp = MagicMock()
         mock_resp.content = html_content.encode("utf-8")
         mock_resp.encoding = "utf-8"
