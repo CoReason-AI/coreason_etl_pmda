@@ -46,6 +46,7 @@ def test_jader_orphan_records() -> None:
     reac = pl.DataFrame({"id": ["1"], "reaction": ["R1"]})
 
     # Should result in empty because Inner Join on Suspected Drugs
+    # Note: Logic starts from Drug filtered by Suspected. So Concomitant is filtered out early.
     result = transform_jader_gold(demo, drug, reac)
     assert len(result) == 0
 
@@ -76,8 +77,8 @@ def test_jader_complex_cartesian_explosion() -> None:
     Case A: 1 Suspected Drug, 1 Reaction -> 1 Row
     Case B: 3 Suspected Drugs, 2 Reactions -> 6 Rows
     Case C: 2 Concomitant Drugs (0 Suspected), 1 Reaction -> 0 Rows
-    Case D: 1 Suspected Drug, 0 Reactions -> 0 Rows
-    Total Expected: 7 Rows
+    Case D: 1 Suspected Drug, 0 Reactions -> 0 Rows (Preserved via Left Join) => 1 Row (Reac is Null)
+    Total Expected: 8 Rows (1A + 6B + 0C + 1D)
     """
     demo = pl.DataFrame(
         {
@@ -139,6 +140,12 @@ def test_jader_complex_cartesian_explosion() -> None:
     assert case_b.row(5, named=True)["primary_suspect_drug"] == "D_B3"
     assert case_b.row(5, named=True)["reaction_pt"] == "R_B2"
 
+    # Verify Case D (Suspected Drug but No Reaction)
+    case_d = result.filter(pl.col("case_id") == "D")
+    assert len(case_d) == 1
+    assert case_d["primary_suspect_drug"][0] == "D_D"
+    assert case_d["reaction_pt"][0] is None
+
 
 def test_jader_missing_optional_columns() -> None:
     """
@@ -173,7 +180,7 @@ def test_jader_null_ids() -> None:
     result = transform_jader_gold(demo, drug, reac)
 
     # Should only match "1".
-    # Polars default inner join on nulls is usually empty for nulls.
+    # Null ID in Drug should be filtered out by logic now.
     assert len(result) == 1
     assert result["case_id"][0] == "1"
 
@@ -232,13 +239,21 @@ def test_date_normalization_numeric_gannen() -> None:
 
 
 def test_jader_join_key_whitespace() -> None:
-    """Verify join failure on mismatched whitespace in IDs."""
+    """Verify join behavior on mismatched whitespace in IDs."""
     demo = pl.DataFrame({"id": ["1 "]})  # Trailing space
     drug = pl.DataFrame({"id": ["1"], "drug_name": ["D1"], "characterization": ["Suspected"]})
     reac = pl.DataFrame({"id": ["1"], "reaction": ["R1"]})
 
     result = transform_jader_gold(demo, drug, reac)
-    assert len(result) == 0
+
+    # Requirement: "Zero loss of 'Suspicion' flags".
+    # Since we anchor on Drug (Left Join), the mismatched ID means Demo data is missing,
+    # BUT the Case (Drug) is preserved.
+    # So we expect 1 row, with patient_sex (from Demo) as Null.
+
+    assert len(result) == 1
+    assert result["primary_suspect_drug"][0] == "D1"
+    assert result["patient_sex"][0] is None
 
 
 def test_approvals_date_parsing_robustness() -> None:
