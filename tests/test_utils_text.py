@@ -7,7 +7,6 @@
 # Commercial use beyond a 30-day trial requires a separate license.
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
-
 from coreason_etl_pmda.utils_text import normalize_text
 
 

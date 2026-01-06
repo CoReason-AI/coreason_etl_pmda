@@ -14,18 +14,15 @@ from datetime import datetime, timezone
 from urllib.parse import urljoin
 
 import dlt
-from bs4 import BeautifulSoup, Tag
-from dlt.sources.helpers import requests
-
+from bs4 import Tag
+from coreason_etl_pmda.config import settings
 from coreason_etl_pmda.utils_logger import logger
-
-# URL for Approvals (Japanese)
-# Likely: https://www.pmda.go.jp/review-services/drug-reviews/review-information/p-drugs/0001.html
+from coreason_etl_pmda.utils_scraping import fetch_url, get_soup
 
 
 @dlt.resource(name="bronze_approvals", write_disposition="append")  # type: ignore[misc]
 def approvals_source(
-    url: str = "https://www.pmda.go.jp/review-services/drug-reviews/review-information/p-drugs/0001.html",
+    url: str = settings.URL_APPROVALS,
     application_type: str = "New Drug",
 ) -> dlt.sources.DltSource:
     """
@@ -38,20 +35,12 @@ def approvals_source(
     seen_ids_set = set(seen_ids)
 
     logger.info(f"Scraping Approvals from {url} (Type: {application_type})")
-    response = requests.get(url)
-    response.raise_for_status()
 
-    # Detect encoding using requests or fallback to content sniffing by BS4
-    # If encoding is not specified in headers, requests might guess wrong (e.g. ISO-8859-1).
-    # PMDA is often Shift_JIS.
-    # We let BS4 handle the content bytes directly as it has good detection logic (dammit),
-    # but we also check if response.encoding is set reliably.
-    # If requests defaulted to ISO-8859-1, we ignore it and let BS4 guess from meta tags or bytes.
+    # Use shared scraping utility
+    response = fetch_url(url)
 
-    # We capture the encoding BS4 eventually used or what requests found.
-    # Since we pass bytes to BS4, we can ask it original_encoding.
-
-    soup = BeautifulSoup(response.content, "html.parser")
+    # Use shared BS4 helper
+    soup = get_soup(response)
     original_encoding = soup.original_encoding or response.encoding or "unknown"
 
     tables = soup.find_all("table")

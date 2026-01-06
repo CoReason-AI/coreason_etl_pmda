@@ -8,16 +8,14 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
-import os
-from typing import Any
-
 import dlt
 
-from coreason_etl_pmda.sources_approvals import approvals_source
-from coreason_etl_pmda.sources_jader import jader_source
-from coreason_etl_pmda.sources_jan import jan_inn_source
-from coreason_etl_pmda.sources_package_inserts import package_inserts_source
-from coreason_etl_pmda.sources_review_reports import review_reports_source
+from coreason_etl_pmda.config import settings
+from coreason_etl_pmda.sources.approvals import approvals_source
+from coreason_etl_pmda.sources.jader import jader_source
+from coreason_etl_pmda.sources.jan import jan_inn_source
+from coreason_etl_pmda.sources.package_inserts import package_inserts_source
+from coreason_etl_pmda.sources.review_reports import review_reports_source
 from coreason_etl_pmda.utils_logger import logger
 
 # Note: Silver/Gold transformations are usually done via dlt transformer or DBT.
@@ -41,28 +39,24 @@ from coreason_etl_pmda.utils_logger import logger
 
 @logger.catch  # type: ignore[misc]
 def run_bronze_pipeline(
-    destination: Any = "duckdb",
+    destination: str | None = None,
     dataset_name: str = "pmda_bronze",
     duckdb_path: str | None = None,
 ) -> dlt.Pipeline:
     """
     Runs the Bronze Layer Ingestion.
     """
-    # If duckdb_path is provided, we configure the destination to use it.
-    # dlt accepts a connection string like "duckdb:///path/to.db"
-    # or we can pass a dlt destination object.
-    if duckdb_path:
-        # Check if destination is the string "duckdb"
-        if destination == "duckdb":
-            destination = f"duckdb:///{duckdb_path}"
-        # If user passed a custom destination object, we ignore duckdb_path or warn?
-        # We assume if duckdb_path is set, they want to use it.
+    # Configuration priority: Function Arg > Config/Env > Default
+    # Note: destination argument usually takes string "duckdb", "postgres", etc.
 
-    # Fallback to env var if not explicitly passed but configured in environment
-    if not duckdb_path and destination == "duckdb":
-        env_path = os.getenv("DUCKDB_PATH")
-        if env_path:
-            destination = f"duckdb:///{env_path}"
+    if not destination:
+        destination = "duckdb"
+
+    final_duckdb_path = duckdb_path or settings.DUCKDB_PATH
+
+    # If duckdb_path is provided, we configure the destination to use it.
+    if final_duckdb_path and destination == "duckdb":
+        destination = f"duckdb:///{final_duckdb_path}"
 
     p = dlt.pipeline(
         pipeline_name="coreason_etl_pmda_bronze",
