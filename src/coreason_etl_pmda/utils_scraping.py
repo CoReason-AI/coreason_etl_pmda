@@ -8,13 +8,19 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
-import time
+import logging
 from typing import Any
 
 import requests
 from bs4 import BeautifulSoup
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+from ratelimit import limits, sleep_and_retry
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from coreason_etl_pmda.config import settings
 from coreason_etl_pmda.utils_logger import logger
@@ -22,23 +28,68 @@ from coreason_etl_pmda.utils_logger import logger
 
 def get_session() -> requests.Session:
     """
-    Returns a configured requests Session with retry logic.
+    Returns a configured requests Session.
+    Note: Retries are now handled by tenacity in fetch_url,
+    so we don't need HTTPAdapter retries here anymore,
+    but we keep the user agent.
     """
     session = requests.Session()
     session.headers.update({"User-Agent": settings.USER_AGENT})
-
-    retry = Retry(
-        total=3,
-        backoff_factor=1,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["HEAD", "GET", "OPTIONS", "POST"],
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount("http://", adapter)
-    session.mount("https://", adapter)
     return session
 
 
+# Rate limit: 1 call per X seconds (defined in settings)
+# We use sleep_and_retry to ensure the thread sleeps if limit is hit.
+@sleep_and_retry  # type: ignore
+@limits(calls=1, period=settings.SCRAPING_RATE_LIMIT_DELAY)  # type: ignore
+def _rate_limited_request(
+    session: requests.Session,
+    method: str,
+    url: str,
+    **kwargs: Any,
+) -> requests.Response:
+    """
+    Internal helper to execute the request with rate limiting.
+    """
+    return session.request(method=method, url=url, **kwargs)
+
+
+def _should_retry_error(exception: BaseException) -> bool:
+    """
+    Custom retry predicate.
+    Retries on:
+    - Connection errors / Timeouts
+    - ChunkedEncodingError
+    - HTTPError only if status code is in [429, 500, 502, 503, 504]
+    """
+    # print(f"Predicate called for {type(exception)}: {exception}")
+    if isinstance(
+        exception,
+        (
+            requests.ConnectionError,
+            requests.Timeout,
+            requests.exceptions.ChunkedEncodingError,
+        ),
+    ):
+        return True
+
+    if isinstance(exception, requests.HTTPError):
+        # Check status code
+        response = exception.response
+        if response is not None:
+            # print(f"Checking status: {response.status_code}")
+            return response.status_code in [429, 500, 502, 503, 504]
+
+    return False
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception(_should_retry_error),
+    before_sleep=before_sleep_log(logging.getLogger("coreason_etl_pmda"), logging.WARNING),
+    reraise=True,
+)
 def fetch_url(
     url: str,
     session: requests.Session | None = None,
@@ -49,7 +100,7 @@ def fetch_url(
     timeout: int = settings.SCRAPING_REQUEST_TIMEOUT,
 ) -> requests.Response:
     """
-    Fetches a URL with rate limiting, error handling, and encoding detection.
+    Fetches a URL with rate limiting (via ratelimit), retries (via tenacity), and encoding detection.
 
     Args:
         url: The URL to fetch.
@@ -63,46 +114,34 @@ def fetch_url(
     Returns:
         The response object.
     """
-    # Mandatory Rate Limit
-    time.sleep(settings.SCRAPING_RATE_LIMIT_DELAY)
-
     if session is None:
-        # If no session provided, use a one-off session (with retries)
         session = get_session()
 
+    logger.debug(f"Fetching {url} [{method}]")
+
     try:
-        logger.debug(f"Fetching {url} [{method}]")
-        response = session.request(
-            method=method,
-            url=url,
+        # Pass request through rate limiter
+        response = _rate_limited_request(
+            session,
+            method,
+            url,
             params=params,
             data=data,
             json=json,
             timeout=timeout,
         )
+
+        # Raise for status to trigger retry logic via exception
         response.raise_for_status()
 
         # Robust Encoding Detection
-        # PMDA often uses Shift-JIS / CP932.
-        # If headers don't specify charset, requests might default to ISO-8859-1.
-        # We try to detect using BeautifulSoup or fallback to standard Japanese encodings.
-
-        # If encoding is not explicitly in Content-Type, we might need to guess.
-        # We check `response.encoding`. If it's ISO-8859-1, it's likely wrong for Japanese sites.
         if response.encoding and response.encoding.lower() == "iso-8859-1":
-            # Try to peek into content using BS4 (which uses chardet/charset-normalizer under the hood)
-            # or just default to apparent_encoding
             response.encoding = response.apparent_encoding
 
-        # Further check: sometimes apparent_encoding is not perfect (e.g. EUC-JP vs Shift_JIS).
-        # We allow the caller to handle specific decoding if needed, but we try our best here.
-        # BS4 is usually good at guessing when parsing HTML.
-        # For non-HTML (like CSV/Zip), the caller handles binary usually.
+        return response  # type: ignore[no-any-return]
 
-        return response
-
-    except requests.RequestException as e:
-        logger.error(f"Failed to fetch {url}: {e}")
+    except Exception:
+        # Let tenacity handle it (or bubble up if not retriable)
         raise
 
 
@@ -110,5 +149,4 @@ def get_soup(response: requests.Response) -> BeautifulSoup:
     """
     Helper to get BeautifulSoup object from response, handling encoding.
     """
-    # We pass the content bytes to BS4 so it can detect encoding from meta tags if available.
     return BeautifulSoup(response.content, "html.parser")

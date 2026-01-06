@@ -8,6 +8,8 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+from typing import Any
+
 import dlt
 
 from coreason_etl_pmda.config import settings
@@ -42,7 +44,7 @@ def run_bronze_pipeline(
     destination: str | None = None,
     dataset_name: str = "pmda_bronze",
     duckdb_path: str | None = None,
-) -> dlt.Pipeline:
+) -> Any:
     """
     Runs the Bronze Layer Ingestion.
     """

@@ -9,9 +9,10 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 import unicodedata
+from typing import Optional
 
 
-def normalize_text(text: str | bytes | None, encoding: str = "utf-8") -> str | None:
+def normalize_text(text: str | bytes | None, encoding: str = "utf-8") -> Optional[str]:
     """
     Normalizes text to handle mojibake and character width issues.
 
@@ -25,6 +26,7 @@ def normalize_text(text: str | bytes | None, encoding: str = "utf-8") -> str | N
     decoded_text = ""
 
     if isinstance(text, bytes):
+        # Fallback chain as per requirements: utf-8 -> cp932 -> euc-jp -> shift_jis
         encodings_to_try = [encoding, "cp932", "euc-jp", "utf-8", "shift_jis"]
         # Deduplicate while preserving order
         seen = set()
@@ -44,11 +46,6 @@ def normalize_text(text: str | bytes | None, encoding: str = "utf-8") -> str | N
                 continue
 
         if not success:
-            # Fallback: decode with errors ignore or replace?
-            # Spec says "Quarantine cp932 decode errors" in Error Handling, but for this utility
-            # we should probably return None or raise.
-            # Given "Quarantine", returning None or a specific error indicator allows the caller to handle it.
-            # Let's return None for now as an indicator of failure.
             return None
     else:
         decoded_text = text
