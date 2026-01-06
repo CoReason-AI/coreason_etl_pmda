@@ -16,7 +16,6 @@ from urllib.parse import urljoin
 import dlt
 import requests
 from bs4 import Tag
-
 from coreason_etl_pmda.config import settings
 from coreason_etl_pmda.utils_logger import logger
 from coreason_etl_pmda.utils_scraping import fetch_url, get_session, get_soup

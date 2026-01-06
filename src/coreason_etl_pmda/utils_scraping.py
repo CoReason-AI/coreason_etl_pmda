@@ -13,14 +13,14 @@ from typing import Any
 
 import requests
 from bs4 import BeautifulSoup
+from ratelimit import limits, sleep_and_retry
 from tenacity import (
+    before_sleep_log,
     retry,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception,
-    before_sleep_log,
 )
-from ratelimit import limits, sleep_and_retry
 
 from coreason_etl_pmda.config import settings
 from coreason_etl_pmda.utils_logger import logger

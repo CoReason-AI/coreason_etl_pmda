@@ -13,7 +13,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 from bs4 import BeautifulSoup
-
 from coreason_etl_pmda.utils_scraping import _should_retry_error, fetch_url, get_session, get_soup
 
 
@@ -117,6 +116,7 @@ def test_get_soup() -> None:
     soup = get_soup(mock_resp)
     assert isinstance(soup, BeautifulSoup)
     assert soup.find("body").text == "Hello"
+
 
 def test_should_retry_error_generic() -> None:
     """Test that generic exceptions return False in predicate."""
