@@ -11,12 +11,12 @@
 import concurrent.futures
 import hashlib
 import os
-from typing import Any
+from typing import Any, Optional
 
 import polars as pl
 import requests
 
-from coreason_etl_pmda.silver.schemas import SilverApprovalSchema
+from coreason_etl_pmda.transformations.silver.schemas import SilverApprovalSchema
 from coreason_etl_pmda.utils_date import convert_japanese_date_to_iso
 from coreason_etl_pmda.utils_text import normalize_text
 
@@ -74,7 +74,7 @@ def normalize_approvals(df: pl.DataFrame) -> pl.DataFrame:
     # We also normalize approval_id (trim, NFKC) to ensure ID consistency.
     text_cols = ["brand_name_jp", "generic_name_jp", "applicant_name_jp", "indication", "approval_id"]
 
-    def norm_str(s: str | None) -> str | None:
+    def norm_str(s: Optional[str]) -> Optional[str]:
         return normalize_text(s) if s else None
 
     # Apply normalization
@@ -87,7 +87,7 @@ def normalize_approvals(df: pl.DataFrame) -> pl.DataFrame:
 
     # 3. Normalize Date
     # approval_date
-    def norm_date(s: str | None) -> str | None:
+    def norm_date(s: Optional[str]) -> Optional[str]:
         return convert_japanese_date_to_iso(s) if s else None
 
     if "approval_date" in df.columns:
@@ -194,7 +194,7 @@ def jan_bridge_ai_fallback(df: pl.DataFrame) -> pl.DataFrame:
         if not generic_jp:
             return None
 
-        return call_deepseek(generic_jp, str(brand_jp) if brand_jp else "")
+        return call_deepseek(str(generic_jp), str(brand_jp) if brand_jp else "")
 
     rows = df.to_dicts()
 

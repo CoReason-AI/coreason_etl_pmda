@@ -11,6 +11,7 @@
 import io
 import zipfile
 from datetime import datetime, timezone
+from typing import Any, Iterator
 from urllib.parse import urljoin
 
 import dlt
@@ -20,10 +21,10 @@ from coreason_etl_pmda.utils_logger import logger
 from coreason_etl_pmda.utils_scraping import fetch_url, get_soup
 
 
-@dlt.resource(name="bronze_jader", write_disposition="replace")  # type: ignore[misc]
+@dlt.resource(name="bronze_jader", write_disposition="replace")
 def jader_source(
     url: str = settings.URL_JADER,
-) -> dlt.sources.DltSource:
+) -> Iterator[Any]:
     """
     Ingests JADER data.
     """
@@ -34,7 +35,7 @@ def jader_source(
     soup = get_soup(response)
 
     # Find zip links
-    zip_links = []
+    zip_links: list[str] = []
     for a in soup.find_all("a", href=True):
         href = a["href"]
         if href.lower().endswith(".zip"):
@@ -54,7 +55,7 @@ def jader_source(
             with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
                 for filename in z.namelist():
                     lower_name = filename.lower()
-                    table_name = None
+                    table_name: str | None = None
 
                     # Identify table type
                     if "demo" in lower_name and lower_name.endswith(".csv"):
@@ -70,7 +71,7 @@ def jader_source(
 
                             # Try decoding
                             # PMDA CSVs are often Shift-JIS / CP932
-                            df = None
+                            df: pl.DataFrame | None = None
                             encodings = ["utf-8", "cp932", "shift_jis", "euc-jp"]
 
                             for enc in encodings:

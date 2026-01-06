@@ -102,5 +102,5 @@ def yield_pmda_approval_rows(url: str) -> Generator[ParsedApprovalRow, None, Non
                         data=record,
                         review_report_links=review_links,
                         source_url=url,
-                        original_encoding=original_encoding,
+                        original_encoding=str(original_encoding),
                     )

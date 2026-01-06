@@ -9,12 +9,12 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 import re
-from typing import Any
+from typing import Any, Optional
 
 import polars as pl
 from pydantic import BaseModel
 
-from coreason_etl_pmda.silver.schemas import (
+from coreason_etl_pmda.transformations.silver.schemas import (
     SilverJaderDemoSchema,
     SilverJaderDrugSchema,
     SilverJaderReacSchema,
@@ -104,7 +104,7 @@ def _normalize_common(df: pl.DataFrame, mapping: dict[str, str]) -> pl.DataFrame
         if col in ["sex", "age", "drug_name", "characterization", "reaction", "id"]:
             cols_to_normalize.append(col)
 
-    def norm_str(s: str | None) -> str | None:
+    def norm_str(s: Optional[str]) -> Optional[str]:
         return normalize_text(s)
 
     for col in cols_to_normalize:

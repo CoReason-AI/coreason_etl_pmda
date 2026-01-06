@@ -9,6 +9,7 @@
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 import io
+from typing import Any, Iterator
 from urllib.parse import urljoin
 
 import dlt
@@ -18,8 +19,8 @@ from coreason_etl_pmda.utils_logger import logger
 from coreason_etl_pmda.utils_scraping import fetch_url, get_soup
 
 
-@dlt.resource(name="bronze_ref_jan_inn", write_disposition="replace")  # type: ignore[misc]
-def jan_inn_source(url: str = settings.URL_JAN_INN) -> dlt.sources.DltSource:
+@dlt.resource(name="bronze_ref_jan_inn", write_disposition="replace")
+def jan_inn_source(url: str = settings.URL_JAN_INN) -> Iterator[dict[str, Any]]:
     """
     Ingests the NIHS "Japanese Accepted Names" Excel/CSV file.
     """
