@@ -129,9 +129,9 @@ def test_jader_source_type_inference_safety() -> None:
             for field in schema:
                 if field.name in ["ID", "Date", "Mixed"]:
                     # PyArrow type check
-                    assert pa.types.is_string(field.type) or pa.types.is_large_string(field.type), (
-                        f"Column {field.name} should be string type, got {field.type}"
-                    )
+                    assert pa.types.is_string(field.type) or pa.types.is_large_string(
+                        field.type
+                    ), f"Column {field.name} should be string type, got {field.type}"
 
             data = unwrap_arrow_data(raw_data)
             assert data[0]["ID"] == "1"  # String
