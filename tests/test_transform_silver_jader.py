@@ -112,3 +112,53 @@ def test_normalize_jader_empty_dataframe() -> None:
     # Check that schema matches output schema (roughly)
     assert "id" in result.columns
     assert "sex" in result.columns
+
+
+def test_normalize_jader_demo_gannen_year() -> None:
+    """Test normalization of Japanese Era years in reporting_year."""
+    # "Reiwa 2" -> 2020
+    # "Heisei 30" -> 2018
+    # "R2" -> 2020
+    df = pl.DataFrame(
+        {
+            "識別番号": ["1", "2", "3"],
+            "報告年度": ["Reiwa 2", "Heisei 30", "R2"],
+        }
+    )
+
+    result = normalize_jader_demo(df)
+    years = result["reporting_year"]
+
+    assert years[0] == 2020
+    assert years[1] == 2018
+    assert years[2] == 2020
+
+
+def test_normalize_jader_demo_invalid_year() -> None:
+    """Test normalization of invalid reporting_year."""
+    df = pl.DataFrame(
+        {
+            "識別番号": ["1"],
+            "報告年度": ["Unknown"],
+        }
+    )
+
+    result = normalize_jader_demo(df)
+    years = result["reporting_year"]
+
+    assert years[0] is None
+
+
+def test_normalize_jader_demo_string_year() -> None:
+    """Test normalization of string integer reporting_year."""
+    df = pl.DataFrame(
+        {
+            "識別番号": ["1"],
+            "報告年度": ["2020"],
+        }
+    )
+
+    result = normalize_jader_demo(df)
+    years = result["reporting_year"]
+
+    assert years[0] == 2020
