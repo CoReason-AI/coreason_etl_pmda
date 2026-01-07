@@ -232,7 +232,17 @@ def jan_bridge_ai_fallback(df: pl.DataFrame) -> pl.DataFrame:
             # Already had a value
             row["_translation_status"] = "lookup_success"
 
-    return pl.DataFrame(rows, schema_overrides=df.schema)
+    # When recreating DataFrame, the schema of 'generic_name_en' might change from Null to String.
+    # We should NOT enforce strict schema from the original DF if it had Null type for that column.
+    # Instead, we let Polars infer, but hint that generic_name_en should be String if possible.
+    # A safe bet is to drop schema_overrides or update it.
+
+    # We update schema_overrides to force String for updated columns
+    new_schema = dict(df.schema)
+    new_schema["generic_name_en"] = pl.String()
+    new_schema["_translation_status"] = pl.String()
+
+    return pl.DataFrame(rows, schema_overrides=new_schema)
 
 
 def call_deepseek(generic_name_jp: str, brand_name_jp: str) -> str | None:
