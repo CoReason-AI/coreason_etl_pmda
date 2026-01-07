@@ -181,28 +181,28 @@ def yield_pmda_approval_rows(url: str) -> Generator[ParsedApprovalRow, None, Non
                 if not cells or len(cells) != len(headers):
                     continue
 
-                record: dict[str, Any] = {}
-                review_links: list[str] = []
+                html_record: dict[str, Any] = {}
+                html_review_links: list[str] = []
 
                 for idx, header in enumerate(headers):
-                    cell: Tag = cells[idx]
-                    cell_text = cell.get_text(strip=True)
+                    html_cell: Tag = cells[idx]
+                    html_cell_text = html_cell.get_text(strip=True)
 
-                    record[header] = cell_text
+                    html_record[header] = html_cell_text
 
                     # Extract Review Report URLs if this is the review column
                     if idx == review_col_idx:
-                        a_tags = cell.find_all("a", href=True)
+                        a_tags = html_cell.find_all("a", href=True)
                         for a in a_tags:
                             href = a["href"]
                             full_url = urljoin(url, href)
-                            review_links.append(full_url)
+                            html_review_links.append(full_url)
 
                 # Basic validation: Must have "販売名" (Brand Name)
-                if any("販売名" in k for k in record.keys()):
+                if any("販売名" in k for k in html_record.keys()):
                     yield ParsedApprovalRow(
-                        data=record,
-                        review_report_links=review_links,
+                        data=html_record,
+                        review_report_links=html_review_links,
                         source_url=url,
                         original_encoding=str(original_encoding),
                     )
