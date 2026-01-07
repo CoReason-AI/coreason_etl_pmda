@@ -76,3 +76,6 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 omit = ["tests/*"]
+
+[tool.poetry.scripts]
+coreason-etl = "coreason_etl_pmda.main:cli"
