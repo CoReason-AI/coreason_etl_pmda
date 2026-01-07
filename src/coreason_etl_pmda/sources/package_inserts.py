@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+import base64
 from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator
@@ -143,12 +144,15 @@ def _process_detail_page(session: requests.Session, url: str) -> Generator[dict[
         encoding = content_resp.encoding or "utf-8"
         content_bytes = content_resp.content
 
+        # Encode binary content to base64 for JSON compatibility
+        content_b64 = base64.b64encode(content_bytes).decode("utf-8")
+
         yield {
             "source_id": full_target_url,
             "ingestion_ts": datetime.now(timezone.utc),
             "original_encoding": encoding,
             "raw_payload": {
-                "content": content_bytes,  # DLT handles bytes
+                "content": content_b64,
                 "source_url": url,
                 "content_url": full_target_url,
             },

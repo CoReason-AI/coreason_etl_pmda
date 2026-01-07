@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+import base64
 import time
 from datetime import datetime, timezone
 from typing import Any, Iterator, cast
@@ -51,12 +52,15 @@ def review_reports_source(
                 # fetch_url handles retries and delays
                 pdf_resp = fetch_url(pdf_url)
 
+                # Encode binary content to base64 for JSON compatibility
+                content_b64 = base64.b64encode(pdf_resp.content).decode("utf-8")
+
                 yield {
                     "source_id": pdf_url,
                     "ingestion_ts": datetime.now(timezone.utc),
                     "original_encoding": row.original_encoding,
                     "raw_payload": {
-                        "content": pdf_resp.content,
+                        "content": content_b64,
                         "brand_name_jp": brand_name,
                         "part_index": i + 1,
                         "source_page_url": url,

@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+import base64
 from collections.abc import Generator
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -133,6 +134,8 @@ def test_package_inserts_fallback_link(mock_fetch_url: MagicMock, mock_get_sessi
 
     assert len(data) == 1
     assert data[0]["source_id"].endswith("/view/doc")
+    # Verify content is base64 encoded
+    assert data[0]["raw_payload"]["content"] == base64.b64encode(b"Content").decode("utf-8")
 
 
 def test_package_inserts_priority_logic(mock_fetch_url: MagicMock, mock_get_session: MagicMock) -> None:

@@ -8,6 +8,7 @@
 #
 # Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
+import base64
 from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
@@ -90,7 +91,9 @@ def test_review_reports_source_extraction(mock_fetch_url: MagicMock) -> None:
     assert item1["source_id"].endswith("report1.pdf")
     assert item1["raw_payload"]["brand_name_jp"] == "Drug A"
     assert item1["raw_payload"]["part_index"] == 1
-    assert item1["raw_payload"]["content"] == b"%PDF-1.4 ... Part 1"
+    # Verify Base64 content
+    expected_b64 = base64.b64encode(b"%PDF-1.4 ... Part 1").decode("utf-8")
+    assert item1["raw_payload"]["content"] == expected_b64
 
     item2 = data[1]
     assert item2["source_id"].endswith("report2.pdf")
