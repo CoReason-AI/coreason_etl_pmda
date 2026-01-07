@@ -37,12 +37,26 @@ def test_dlt_json_serialization_failure_with_bytes() -> None:
 def test_dlt_json_serialization_success_with_base64() -> None:
     """
     Verifies that Base64 encoded content is JSON serializable.
+    Includes edge cases: empty bytes, large bytes.
     """
-    content = b"some binary content"
-    b64_content = base64.b64encode(content).decode("utf-8")
+    cases = [
+        b"some binary content",
+        b"",  # Empty
+        b"\x00\x01\xff",  # Non-printable
+        b"A" * 1024 * 1024,  # 1MB
+    ]
 
-    data = {"id": 1, "raw_payload": {"content": b64_content}}
+    for content in cases:
+        b64_content = base64.b64encode(content).decode("utf-8")
 
-    # Should succeed
-    json_str = json.dumps(data)
-    assert b64_content in json_str
+        data = {"id": 1, "raw_payload": {"content": b64_content}}
+
+        # Should succeed serialization
+        json_str = json.dumps(data)
+
+        # Verify round-trip
+        loaded = json.loads(json_str)
+        loaded_b64 = loaded["raw_payload"]["content"]
+        decoded = base64.b64decode(loaded_b64)
+
+        assert decoded == content
