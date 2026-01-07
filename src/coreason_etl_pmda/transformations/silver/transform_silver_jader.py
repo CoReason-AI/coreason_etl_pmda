@@ -19,6 +19,7 @@ from coreason_etl_pmda.transformations.silver.schemas import (
     SilverJaderDrugSchema,
     SilverJaderReacSchema,
 )
+from coreason_etl_pmda.utils_date import convert_japanese_date_to_iso
 from coreason_etl_pmda.utils_text import normalize_text
 
 # Mappings (Japanese -> English)
@@ -153,11 +154,41 @@ def _validate_with_pydantic(df: pl.DataFrame, model: type[BaseModel]) -> pl.Data
     return pl.DataFrame(validated)
 
 
+def _normalize_year(val: Any) -> int | None:
+    """
+    Normalizes reporting_year.
+    Handles integers, integer strings, and Japanese Era dates (Gannen).
+    """
+    # Fast path: already int
+    if isinstance(val, int):
+        return val
+
+    # Fast path: string integer
+    s_val = str(val).strip()
+    if s_val.isdigit():
+        return int(s_val)
+
+    # Japanese Era Date (Gannen)
+    iso_date = convert_japanese_date_to_iso(s_val)
+    if iso_date:
+        # iso_date is YYYY-MM-DD
+        return int(iso_date.split("-")[0])
+
+    return None
+
+
 def normalize_jader_demo(df: pl.DataFrame) -> pl.DataFrame:
     """
     Normalizes JADER Demo table.
     """
     df = _normalize_common(df, DEMO_MAPPING)
+
+    # Normalize reporting_year if present
+    if "reporting_year" in df.columns:
+        df = df.with_columns(
+            pl.col("reporting_year").map_elements(_normalize_year, return_dtype=pl.Int64).alias("reporting_year")
+        )
+
     return _validate_with_pydantic(df, SilverJaderDemoSchema)
 
 
