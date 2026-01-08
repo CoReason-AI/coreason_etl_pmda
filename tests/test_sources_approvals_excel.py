@@ -1,6 +1,6 @@
-
 import io
 import unittest
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import openpyxl
@@ -8,7 +8,12 @@ from coreason_etl_pmda.sources.common import yield_pmda_approval_rows
 
 
 class TestSourcesApprovalsExcel(unittest.TestCase):
-    def _create_mock_excel(self, headers, rows, hyperlink_target=None):
+    def _create_mock_excel(
+        self,
+        headers: list[str],
+        rows: list[list[Any]],
+        hyperlink_target: str | None = None,
+    ) -> bytes:
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.append(headers)
@@ -31,7 +36,7 @@ class TestSourcesApprovalsExcel(unittest.TestCase):
         return output.read()
 
     @patch("coreason_etl_pmda.sources.common.fetch_url")
-    def test_excel_ingestion_success(self, mock_fetch):
+    def test_excel_ingestion_success(self, mock_fetch: MagicMock) -> None:
         """
         Test that we correctly detect and parse an Excel file when present.
         """
@@ -66,20 +71,21 @@ class TestSourcesApprovalsExcel(unittest.TestCase):
         self.assertIn("http://example.com/report.pdf", row.review_report_links)
 
     @patch("coreason_etl_pmda.sources.common.fetch_url")
-    def test_fallback_on_empty_excel(self, mock_fetch):
+    def test_fallback_on_empty_excel(self, mock_fetch: MagicMock) -> None:
         """
         Test fallback to HTML if Excel is found but empty/invalid.
         """
         base_url = "http://example.com/page"
-        excel_url = "http://example.com/list.xlsx"
+        # excel_url variable removed as it was unused in logic/assertions
 
         # Mock 1: HTML page with Excel link AND a table
+        # We need at least 2 keywords in headers for the table heuristic to match
         html_content = """
         <html><body>
             <a href="list.xlsx">List</a>
             <table>
-                <tr><th>販売名</th></tr>
-                <tr><td>Drug B (HTML)</td></tr>
+                <tr><th>販売名</th><th>承認年月日</th></tr>
+                <tr><td>Drug B (HTML)</td><td>2020-01-01</td></tr>
             </table>
         </body></html>
         """
@@ -103,7 +109,7 @@ class TestSourcesApprovalsExcel(unittest.TestCase):
         self.assertEqual(results[0].source_url, base_url)
 
     @patch("coreason_etl_pmda.sources.common.fetch_url")
-    def test_fallback_on_irrelevant_excel(self, mock_fetch):
+    def test_fallback_on_irrelevant_excel(self, mock_fetch: MagicMock) -> None:
         """
         Test fallback if Excel exists but doesn't contain approval data (e.g. diff headers).
         """
@@ -114,8 +120,8 @@ class TestSourcesApprovalsExcel(unittest.TestCase):
         <html><body>
             <a href="other.xlsx">Other List</a>
             <table>
-                <tr><th>販売名</th></tr>
-                <tr><td>Drug C (HTML)</td></tr>
+                <tr><th>販売名</th><th>承認年月日</th></tr>
+                <tr><td>Drug C (HTML)</td><td>2020-02-02</td></tr>
             </table>
         </body></html>
         """
