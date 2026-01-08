@@ -40,10 +40,12 @@ def test_review_reports_source_extraction(mock_fetch_url: MagicMock) -> None:
         <body>
             <table>
                 <tr>
+                    <th>承認番号</th>
                     <th>販売名</th>
                     <th>審査報告書</th>
                 </tr>
                 <tr>
+                    <td>12345</td>
                     <td>Drug A</td>
                     <td>
                         <a href="report1.pdf">Part 1</a>
@@ -51,6 +53,7 @@ def test_review_reports_source_extraction(mock_fetch_url: MagicMock) -> None:
                     </td>
                 </tr>
                 <tr>
+                    <td>67890</td>
                     <td>Drug B</td>
                     <td>-</td>
                 </tr>
@@ -90,6 +93,7 @@ def test_review_reports_source_extraction(mock_fetch_url: MagicMock) -> None:
     item1 = data[0]
     assert item1["source_id"].endswith("report1.pdf")
     assert item1["raw_payload"]["brand_name_jp"] == "Drug A"
+    assert item1["raw_payload"]["approval_id"] == "12345"
     assert item1["raw_payload"]["part_index"] == 1
     # Verify Base64 content
     expected_b64 = base64.b64encode(b"%PDF-1.4 ... Part 1").decode("utf-8")
@@ -97,6 +101,7 @@ def test_review_reports_source_extraction(mock_fetch_url: MagicMock) -> None:
 
     item2 = data[1]
     assert item2["source_id"].endswith("report2.pdf")
+    assert item2["raw_payload"]["approval_id"] == "12345"
     assert item2["raw_payload"]["part_index"] == 2
 
 

@@ -40,6 +40,24 @@ def review_reports_source(
         brand_key = next((k for k in record if "販売名" in k), None)
         brand_name = record.get(brand_key, "") if brand_key else ""
 
+        # Extract Approval ID (承認番号)
+        # Robust strategy:
+        # 1. Look for EXACT match "承認番号" (headers are normalized/stripped in common.py)
+        # 2. Look for keys STARTING with "承認番号" (to capture "承認番号(主)" etc.)
+        # 3. This avoids "旧承認番号" (Old Approval Number) as it doesn't start with "承認番号".
+
+        approval_key = None
+        if "承認番号" in record:
+            approval_key = "承認番号"
+        else:
+            # Fallback: Find key starting with "承認番号"
+            # We sort to be deterministic if multiple exist (unlikely but safe)
+            candidates = sorted([k for k in record.keys() if k.startswith("承認番号")])
+            if candidates:
+                approval_key = candidates[0]
+
+        approval_id = record.get(approval_key, "") if approval_key else ""
+
         for i, pdf_url in enumerate(review_links):
             if not pdf_url.lower().endswith(".pdf"):
                 continue
@@ -62,6 +80,7 @@ def review_reports_source(
                     "raw_payload": {
                         "content": content_b64,
                         "brand_name_jp": brand_name,
+                        "approval_id": approval_id,
                         "part_index": i + 1,
                         "source_page_url": url,
                     },
