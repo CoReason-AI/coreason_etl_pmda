@@ -40,6 +40,10 @@ def review_reports_source(
         brand_key = next((k for k in record if "販売名" in k), None)
         brand_name = record.get(brand_key, "") if brand_key else ""
 
+        # Extract Approval ID (承認番号)
+        approval_key = next((k for k in record if "承認番号" in k), None)
+        approval_id = record.get(approval_key, "") if approval_key else ""
+
         for i, pdf_url in enumerate(review_links):
             if not pdf_url.lower().endswith(".pdf"):
                 continue
@@ -62,6 +66,7 @@ def review_reports_source(
                     "raw_payload": {
                         "content": content_b64,
                         "brand_name_jp": brand_name,
+                        "approval_id": approval_id,
                         "part_index": i + 1,
                         "source_page_url": url,
                     },
