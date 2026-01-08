@@ -1,173 +1,139 @@
-# Copyright (c) 2025 CoReason, Inc.
-#
-# This software is proprietary and dual-licensed.
-# Licensed under the Prosperity Public License 3.0 (the "License").
-# A copy of the license is available at https://prosperitylicense.com/versions/3.0.0
-# For details, see the LICENSE file.
-# Commercial use beyond a 30-day trial requires a separate license.
-#
-# Source Code: https://github.com/CoReason-AI/coreason_etl_pmda
 
 import io
+import unittest
 from unittest.mock import MagicMock, patch
 
 import openpyxl
-from coreason_etl_pmda.sources.approvals import approvals_source
+from coreason_etl_pmda.sources.common import yield_pmda_approval_rows
 
 
-def create_mock_excel(empty: bool = False, no_valid_rows: bool = False) -> bytes:
-    """Creates a simple in-memory Excel file for testing."""
-    wb = openpyxl.Workbook()
-    ws = wb.active
+class TestSourcesApprovalsExcel(unittest.TestCase):
+    def _create_mock_excel(self, headers, rows, hyperlink_target=None):
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(headers)
+        for row_data in rows:
+            ws.append(row_data)
 
-    if empty:
-        # Save empty
-        pass
-    elif no_valid_rows:
-        ws.append(["RandomHeader", "Col2"])
-        ws.append(["Val1", "Val2"])
-    else:
-        # Valid data
-        # Headers
-        ws.append(["販売名", "承認番号", "承認年月日", "一般的名称", "申請者氏名", "審査報告書"])
-        # Row 1 (With Hyperlink)
-        ws.cell(row=2, column=1, value="ExcelBrand")
-        ws.cell(row=2, column=2, value="111111")
-        ws.cell(row=2, column=3, value="R3.1.1")
-        ws.cell(row=2, column=4, value="ExcelGen")
-        ws.cell(row=2, column=5, value="ExcelCompany")
+        # Add hyperlink to last cell of last row if requested
+        if hyperlink_target and rows:
+            # cell index (row, col) - 1-based
+            # last row is len(rows) + 1 (header)
+            r_idx = len(rows) + 1
+            # last col is len(headers)
+            c_idx = len(headers)
+            cell = ws.cell(row=r_idx, column=c_idx)
+            cell.hyperlink = hyperlink_target
 
-        cell_link = ws.cell(row=2, column=6, value="Report PDF")
-        cell_link.hyperlink = "http://example.com/report.pdf"
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return output.read()
 
-        # Row 2 (Without Hyperlink, plain text URL)
-        ws.append(["ExcelBrand2", "222222", "R3.1.2", "ExcelGen2", "ExcelCompany2", "http://example.com/report2.pdf"])
+    @patch("coreason_etl_pmda.sources.common.fetch_url")
+    def test_excel_ingestion_success(self, mock_fetch):
+        """
+        Test that we correctly detect and parse an Excel file when present.
+        """
+        base_url = "http://example.com/page"
+        excel_url = "http://example.com/list.xlsx"
 
-    out = io.BytesIO()
-    wb.save(out)
-    return out.getvalue()
+        # Mock 1: The HTML page containing the link to Excel
+        mock_html_resp = MagicMock()
+        html_text = f'<html><body><a href="{excel_url}">Download List</a></body></html>'
+        mock_html_resp.text = html_text
+        mock_html_resp.content = html_text.encode("utf-8")  # BeautifulSoup needs bytes
+        mock_html_resp.encoding = "utf-8"
 
-
-def test_approvals_source_excel_ingestion() -> None:
-    """
-    Test that approvals_source follows the 'Scrape List -> Download Excel' pattern.
-    It should find the Excel link on the page, download it, and extract rows.
-    """
-
-    html_content = """
-    <html>
-        <body>
-            <h1>List of Approvals</h1>
-            <p>
-                <a href="approvals_2024.xlsx">Download List (Excel)</a>
-            </p>
-        </body>
-    </html>
-    """
-
-    excel_bytes = create_mock_excel()
-
-    with patch("coreason_etl_pmda.sources.common.fetch_url") as mock_fetch:
-        mock_page_resp = MagicMock()
-        mock_page_resp.content = html_content.encode("utf-8")
-        mock_page_resp.encoding = "utf-8"
+        # Mock 2: The Excel file content
+        headers = ["販売名", "承認年月日", "審査報告書"]
+        rows = [["Drug A", "2020-01-01", "Report"]]
+        excel_content = self._create_mock_excel(headers, rows, hyperlink_target="report.pdf")
 
         mock_excel_resp = MagicMock()
-        mock_excel_resp.content = excel_bytes
-        mock_excel_resp.encoding = None
+        mock_excel_resp.content = excel_content
 
-        def side_effect(url: str, **kwargs: dict[str, object]) -> MagicMock:
-            if url.endswith(".xlsx"):
-                return mock_excel_resp
-            return mock_page_resp
+        # Side effect sequence
+        mock_fetch.side_effect = [mock_html_resp, mock_excel_resp]
 
-        mock_fetch.side_effect = side_effect
+        results = list(yield_pmda_approval_rows(base_url))
 
-        # Run
-        data = list(approvals_source(url="http://example.com/list"))
+        self.assertEqual(len(results), 1)
+        row = results[0]
+        self.assertEqual(row.data["販売名"], "Drug A")
+        self.assertEqual(row.source_url, excel_url)
+        # Check if hyperlink was extracted
+        self.assertIn("http://example.com/report.pdf", row.review_report_links)
 
-        # Assertions
-        assert len(data) == 2
+    @patch("coreason_etl_pmda.sources.common.fetch_url")
+    def test_fallback_on_empty_excel(self, mock_fetch):
+        """
+        Test fallback to HTML if Excel is found but empty/invalid.
+        """
+        base_url = "http://example.com/page"
+        excel_url = "http://example.com/list.xlsx"
 
-        # Check extraction logic
-        row1 = next(r for r in data if r["source_id"] == "111111")
-        assert row1["raw_payload"].get("review_report_url") == "http://example.com/report.pdf"
-
-
-def test_approvals_source_excel_fallback_empty() -> None:
-    """
-    Test fallback to HTML if Excel is empty.
-    """
-    # Need at least 2 matching headers: 販売名, 承認番号
-    html_content = """
-    <html>
-        <body>
-            <a href="empty.xlsx">List</a>
+        # Mock 1: HTML page with Excel link AND a table
+        html_content = """
+        <html><body>
+            <a href="list.xlsx">List</a>
             <table>
-                <tr><th>販売名</th><th>承認番号</th></tr>
-                <tr><td>Fallback_HTML_Data</td><td>999999</td></tr>
+                <tr><th>販売名</th></tr>
+                <tr><td>Drug B (HTML)</td></tr>
             </table>
-        </body>
-    </html>
-    """
+        </body></html>
+        """
+        mock_html_resp = MagicMock()
+        mock_html_resp.text = html_content
+        mock_html_resp.content = html_content.encode("utf-8")
+        mock_html_resp.encoding = "utf-8"
 
-    excel_bytes = create_mock_excel(empty=True)
-
-    with patch("coreason_etl_pmda.sources.common.fetch_url") as mock_fetch:
-        mock_page_resp = MagicMock()
-        mock_page_resp.content = html_content.encode("utf-8")
-        mock_page_resp.encoding = "utf-8"
-
+        # Mock 2: Empty Excel file (only headers or empty)
+        excel_content = self._create_mock_excel([], [])
         mock_excel_resp = MagicMock()
-        mock_excel_resp.content = excel_bytes
+        mock_excel_resp.content = excel_content
 
-        def side_effect(url: str, **kwargs: dict[str, object]) -> MagicMock:
-            if url.endswith(".xlsx"):
-                return mock_excel_resp
-            return mock_page_resp
+        mock_fetch.side_effect = [mock_html_resp, mock_excel_resp]
 
-        mock_fetch.side_effect = side_effect
+        results = list(yield_pmda_approval_rows(base_url))
 
-        data = list(approvals_source())
-        # Should fallback to HTML
-        assert len(data) == 1
-        assert data[0]["raw_payload"]["販売名"] == "Fallback_HTML_Data"
+        # Should fall back to HTML and find Drug B
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].data["販売名"], "Drug B (HTML)")
+        self.assertEqual(results[0].source_url, base_url)
 
+    @patch("coreason_etl_pmda.sources.common.fetch_url")
+    def test_fallback_on_irrelevant_excel(self, mock_fetch):
+        """
+        Test fallback if Excel exists but doesn't contain approval data (e.g. diff headers).
+        """
+        base_url = "http://example.com/page"
 
-def test_approvals_source_excel_fallback_irrelevant() -> None:
-    """
-    Test fallback to HTML if Excel has no valid rows.
-    """
-    # Need at least 2 matching headers
-    html_content = """
-    <html>
-        <body>
-            <a href="irrelevant.xlsx">List</a>
+        # Mock 1: HTML
+        html_content = """
+        <html><body>
+            <a href="other.xlsx">Other List</a>
             <table>
-                <tr><th>販売名</th><th>承認番号</th></tr>
-                <tr><td>Fallback_HTML_Data</td><td>888888</td></tr>
+                <tr><th>販売名</th></tr>
+                <tr><td>Drug C (HTML)</td></tr>
             </table>
-        </body>
-    </html>
-    """
+        </body></html>
+        """
+        mock_html_resp = MagicMock()
+        mock_html_resp.text = html_content
+        mock_html_resp.content = html_content.encode("utf-8")
+        mock_html_resp.encoding = "utf-8"
 
-    excel_bytes = create_mock_excel(no_valid_rows=True)
-
-    with patch("coreason_etl_pmda.sources.common.fetch_url") as mock_fetch:
-        mock_page_resp = MagicMock()
-        mock_page_resp.content = html_content.encode("utf-8")
-        mock_page_resp.encoding = "utf-8"
-
+        # Mock 2: Excel with random data (no "販売名")
+        headers = ["Column A", "Column B"]
+        rows = [["Val 1", "Val 2"]]
+        excel_content = self._create_mock_excel(headers, rows)
         mock_excel_resp = MagicMock()
-        mock_excel_resp.content = excel_bytes
+        mock_excel_resp.content = excel_content
 
-        def side_effect(url: str, **kwargs: dict[str, object]) -> MagicMock:
-            if url.endswith(".xlsx"):
-                return mock_excel_resp
-            return mock_page_resp
+        mock_fetch.side_effect = [mock_html_resp, mock_excel_resp]
 
-        mock_fetch.side_effect = side_effect
+        results = list(yield_pmda_approval_rows(base_url))
 
-        data = list(approvals_source())
-        assert len(data) == 1
-        assert data[0]["raw_payload"]["販売名"] == "Fallback_HTML_Data"
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].data["販売名"], "Drug C (HTML)")
